@@ -1,6 +1,6 @@
-# ConvMod — Конвертер чисел и анализатор Modbus
+## ConvMod — Конвертер чисел и анализатор Modbus
 
-Приложение для конвертации чисел между различными форматами (десятичный, HEX, двоичный, IEEE754, Unicode, UTF-8) и анализа Modbus кадров (RTU, ASCII, TCP).
+Приложение для конвертации чисел между различными форматами (десятичный, HEX, двоичный, IEEE754, Unicode, UTF-8) и анализа Modbus кадров (RTU, ASCII, TCP).**
 
 ## Возможности
 
@@ -10,25 +10,31 @@
 - HEX прямой и дополнительный код
 - Двоичный прямой и дополнительный код
 - IEEE754 (binary/hex) — 32-битный single precision
-- Unicode и UTF-8 символы (кодовая точка → символ)
-- Подсветка байтов разными цветами (с младшего байта)
-- Автоматическое преобразование при вводе
+- Unicode и UTF-8 символы
+- Подсветка байтов разными цветами
 
 ### Modbus анализатор
 
-- Поддержка протоколов: RTU, ASCII, TCP
+- Поддержка протоколов: RTU, ASCII, TCP **
 - Определение направления: Request / Response
-- Парсинг структуры кадра (Slave ID / Unit ID, Function Code, Address, Quantity, Data)
-- Проверка CRC16 (RTU) и LRC (ASCII)
-- Расшифровка кодов ошибок Modbus
+- Парсинг структуры кадра
+- Проверка CRC16 (RTU) и LRC (ASCII) **
+- Расшифровка кодов ошибок
 - Логирование всех анализируемых команд
 
-### Интерфейс
+## Скриншоты
 
-- Вкладки: Конвертер, Настройка, Modbus, Лог, Справка
-- Настройка видимости форматов
-- Сохранение настроек в YAML
-- Копирование/вставка через Ctrl+C / Ctrl+V
+### Конвертер чисел
+
+![Конвертер](screenshots/convmod_435.png)
+
+### Отрицательные числа
+
+![Отрицательные числа](screenshots/convmod_minus.png)
+
+### Modbus анализатор
+
+![Modbus анализатор](screenshots/convmod_modbus.png)
 
 ## Требования
 
@@ -39,22 +45,13 @@
 ## Установка и запуск
 
 ```bash
-# Клонирование репозитория
 git clone https://github.com/alexander13orlov/convmod.git
 cd convmod
-
-# Создание виртуального окружения
-python -m venv .venv
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/Mac
-
-# Установка зависимостей
+python -m venv venv
+venv\Scripts\activate
 pip install -r requirements.txt
-
-# Запуск приложения
 python main.py
 ```
-
 
 ## Сборка EXE
 
@@ -98,3 +95,5 @@ python run_tests.py
 ## Лицензия
 
 MIT
+
+** Работа  анализатора ASCII не проверялась
