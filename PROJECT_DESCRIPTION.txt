@@ -1,0 +1,238 @@
+# Файл: PROJECT_DESCRIPTION.txt
+# Проект: Конвертер чисел + Modbus анализатор
+# Язык: Python 3.11+
+# GUI: PyQt6
+
+==================================================
+1. НАЗНАЧЕНИЕ ПРОЕКТА
+==================================================
+
+Приложение предоставляет два основных модуля:
+
+1.1. КОНВЕРТЕР ЧИСЕЛ
+    - Преобразование чисел между форматами:
+      десятичный, HEX прямой/дополнительный код,
+      двоичный прямой/дополнительный код, IEEE754 (binary/hex),
+      Unicode символ, UTF-8 символ
+    - Подсветка байтов разными цветами (с младшего байта)
+    - Автоматическое обновление всех полей при вводе
+
+1.2. MODBUS АНАЛИЗАТОР
+    - Парсинг Modbus кадров (RTU, ASCII, TCP)
+    - Поддержка запросов, ответов и исключений
+    - Проверка CRC16 (RTU) и LRC (ASCII)
+    - Отображение структуры кадра (адрес, функция, данные)
+    - Логирование всех анализируемых команд
+
+==================================================
+2. СТРУКТУРА ПРОЕКТА
+==================================================
+
+numConverter/
+│
+├── main.py                     # Точка входа, инициализация QApplication
+├── config_manager.py           # Загрузка/сохранение settings.yaml
+├── converters.py               # Класс Converter: преобразование чисел
+├── validators.py               # Класс Validator: валидация ввода по regex
+├── highlighters.py             # Класс ByteHighlighter: подсветка байтов
+├── styles.py                   # CSS стили для виджетов (опционально)
+├── settings.yaml               # Файл настроек (создается автоматически)
+├── modbus_commands.log         # Лог Modbus команд (создается автоматически)
+│
+├── run_tests.py                # Запуск всех тестов
+├── debug_parser.py             # Отладочный скрипт для Modbus парсера
+├── debug_crc.py                # Отладочный скрипт для CRC16
+├── NumConverter.spec           # PyInstaller spec файл
+├── requirements.txt            # Зависимости: PyQt6, PyYAML
+│
+├── tests/
+│   ├── __init__.py
+│   └── test_modbus_parser.py   # Юнит-тесты Modbus парсера (60+ тестов)
+│
+├── widgets/                    # GUI компоненты
+│   ├── __init__.py
+│   ├── base_field.py           # Базовое поле ввода NumberField
+│   ├── byte_field.py           # ByteGroupField (наследник с подсветкой)
+│   ├── converter_widget.py     # Основной виджет конвертера
+│   ├── modbus_widget.py        # Виджет Modbus анализатора
+│   ├── log_widget.py           # Виджет лога (отображение/сохранение)
+│   ├── help_widget.py          # Виджет справки (HTML, кликабельные ссылки)
+│   ├── settings_widget.py      # Виджет настроек (выбор видимых форматов)
+│   ├── main_window.py          # Главное окно с QTabWidget
+│   │
+│   └── modbus/                 # Модули парсинга Modbus
+│       ├── __init__.py
+│       ├── constants.py        # Константы: FUNCTION_NAMES, EXCEPTION_CODES,
+│       │                       # REQUEST_STRUCTURE, RESPONSE_STRUCTURE
+│       ├── modbus_parser.py    # Фасадный класс ModbusParser
+│       ├── parser_pdu.py       # Парсер PDU (общий для всех протоколов)
+│       ├── parser_tcp.py       # Парсер TCP кадров (MBAP + PDU)
+│       ├── parser_rtu.py       # Парсер RTU кадров (SlaveID + PDU + CRC)
+│       ├── parser_ascii.py     # Парсер ASCII кадров (':' + hex + LRC + CRLF)
+│       └── validator.py        # Валидатор структуры кадров
+│
+└── old/                        # Старые версии (не используются)
+└── output/                     # Скомпилированные EXE файлы
+
+==================================================
+3. ЛОГИКА ВЗАИМОДЕЙСТВИЯ МОДУЛЕЙ
+==================================================
+
+3.1. ЗАПУСК ПРИЛОЖЕНИЯ
+    main.py → MainWindow → _setup_ui() → создание вкладок
+
+3.2. КОНВЕРТЕР
+    NumberField (base_field.py)
+        ↓ textChanged
+    _on_text_changed() → Validator.validate() → changed.emit()
+        ↓
+    ConverterWidget._on_field_changed()
+        ↓
+    Converter.parse() → числовое значение
+        ↓
+    Converter.convert() → преобразование в другие форматы
+        ↓
+    NumberField.set_value_silent() → обновление полей (без сигналов)
+
+    ByteGroupField (byte_field.py) наследует NumberField,
+    добавляет ByteHighlighter для подсветки байтов.
+
+3.3. MODBUS АНАЛИЗАТОР
+    ModbusWidget._on_analyze()
+        ↓
+    ModbusParser.parse() или parse_rtu_with_options()
+        ↓
+    Выбор парсера по протоколу:
+        - TCPParser → разбор MBAP заголовка → PDUParser
+        - RTUParser → разбор SlaveID и CRC → PDUParser
+        - ASCIJParser → разбор ':' и LRC → PDUParser
+        ↓
+    PDUParser.parse_request() / parse_response()
+        ↓
+    Разбор PDU по function code (адрес, количество, данные)
+        ↓
+    Возврат результата в ModbusWidget._display_result()
+
+3.4. ЛОГИРОВАНИЕ
+    ModbusWidget._on_analyze() → LogWidget.add_entry()
+        ↓
+    Запись в файл modbus_commands.log
+    Отображение в LogWidget.log_text
+
+3.5. НАСТРОЙКИ
+    SettingsWidget (чекебоксы) → settingsChanged сигнал
+        ↓
+    MainWindow._apply_settings() → ConverterWidget.update_visible_fields()
+        ↓
+    ConverterWidget._build_fields() → перестроение интерфейса
+        ↓
+    ConfigManager.save() → сохранение в settings.yaml
+
+==================================================
+4. ОПИСАНИЕ КЛЮЧЕВЫХ КЛАССОВ
+==================================================
+
+4.1. NumberField (base_field.py)
+    - Базовое поле ввода с валидацией
+    - changed сигнал (str, self)
+    - set_value_silent() - программное обновление без сигнала
+    - _ignore_signal - блокировка рекурсивных вызовов
+
+4.2. ByteGroupField (byte_field.py)
+    - Наследник NumberField
+    - Добавляет ByteHighlighter
+    - Переопределяет set_value_silent() для подсветки
+
+4.3. ConverterWidget (converter_widget.py)
+    - Управляет всеми полями конвертера
+    - active_source - поле с фокусом (подсвечено синим)
+    - updating - флаг блокировки рекурсии
+    - Игнорирует вызовы _on_field_changed от полей без фокуса
+
+4.4. ModbusParser (modbus/modbus_parser.py)
+    - Фасад, выбирает парсер по протоколу
+    - parse_rtu_with_options() - для RTU с опциями SlaveID/CRC
+
+4.5. PDUParser (modbus/parser_pdu.py)
+    - Парсинг PDU (единая логика для всех протоколов)
+    - parse_request() / parse_response()
+    - Проверка длины PDU для каждой функции
+
+4.6. TCPParser (modbus/parser_tcp.py)
+    - Разбор MBAP заголовка (Transaction, Protocol, Length, UnitID)
+    - Вызов PDUParser для PDU
+
+4.7. RTUParser (modbus/parser_rtu.py)
+    - Разбор SlaveID и CRC16
+    - Вызов PDUParser для PDU
+    - crc16() - вычисление CRC
+
+4.8. ASCIJParser (modbus/parser_ascii.py)
+    - Разбор стартового байта ':' и конечных CRLF
+    - LRC проверка
+    - Вызов PDUParser для PDU
+
+4.9. ConfigManager (config_manager.py)
+    - Загрузка/сохранение settings.yaml
+    - Рекурсивное слияние с default_config
+
+4.10. LogWidget (log_widget.py)
+    - Отображение лога
+    - Добавление записей с timestamp
+    - Сохранение/очистка лога
+
+==================================================
+5. ЛИШНИЕ/НЕИСПОЛЬЗУЕМЫЕ МОДУЛИ
+==================================================
+
+5.1. МОЖНО УДАЛИТЬ (не используются в текущей версии):
+    - debug_crc.py (отладочный скрипт)
+    - debug_parser.py (отладочный скрипт)
+    - styles.py (стили не подключены в main_window.py)
+    - old/ (целиком, старые версии)
+    - output/ (скомпилированные EXE, не нужны в исходниках)
+
+5.2. НО НЕ УДАЛЯТЬ (используются):
+    - tree_script.py (утилита для вывода структуры)
+    - run_tests.py (запуск тестов)
+    - NumConverter.spec (для PyInstaller)
+    - requirements.txt (зависимости)
+
+5.3. ФАЙЛЫ КОТОРЫЕ СОЗДАЮТСЯ ПРИ РАБОТЕ:
+    - settings.yaml
+    - modbus_commands.log
+    - __pycache__/ (игнорировать)
+
+==================================================
+6. ЗАВИСИМОСТИ (requirements.txt)
+==================================================
+
+PyQt6==6.8.1
+PyYAML==6.0.2
+
+==================================================
+7. СБОРКА EXE (PyInstaller)
+==================================================
+
+pyinstaller --onefile --windowed --name="NumConverter" --add-data "widgets;widgets" --add-data "config_manager.py;." --add-data "converters.py;." --add-data "highlighters.py;." --add-data "validators.py;." --hidden-import=yaml main.py
+
+==================================================
+8. ПРИМЕЧАНИЯ ПО ЛОГИКЕ
+==================================================
+
+8.1. Предотвращение скачка подсветки в конвертере:
+    - В _on_field_changed добавлена проверка source.text_edit.hasFocus()
+    - Программные обновления полей (без фокуса) игнорируются
+
+8.2. Блокировка сигналов при программном обновлении:
+    - NumberField.set_value_silent() использует _ignore_signal
+    - ByteGroupField.set_value_silent() также устанавливает _ignore_signal
+
+8.3. Modbus RTU опции:
+    - include_slave=False → Slave ID отсутствует в данных
+    - include_crc=False → CRC отсутствует в данных
+    - При include_slave=False CRC не вычисляется (невозможно)
+
+8.4. Статусная строка:
+    - Для конвертера: Байт, Символов, Выделено
+    - Для Modbus: Байт (из HEX строки), Символов, Выделено

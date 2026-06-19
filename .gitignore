@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Временные файлы
+output/
+*.exe
+*.log
+old/
+dist/
+build/
+*.spec
+settings.yaml

@@ -1,0 +1,304 @@
+# Файл: MODULE_DETAILS.txt
+# Проект: Конвертер чисел + Modbus анализатор
+# Язык: Python 3.11+
+# GUI: PyQt6
+
+==================================================
+1. КОРНЕВЫЕ МОДУЛИ
+==================================================
+
+1.1. main.py
+    - Точка входа в приложение
+    - Создает QApplication
+    - Инициализирует MainWindow
+    - Запускает главный цикл событий app.exec()
+    - Настраивает логирование (INFO уровень)
+
+1.2. config_manager.py
+    - Класс ConfigManager
+    - Читает/записывает settings.yaml
+    - default_config: настройки по умолчанию (видимые поля конвертера, настройки Modbus)
+    - _deep_merge(): рекурсивное слияние загруженной конфигурации с дефолтной
+    - Используется MainWindow для сохранения/восстановления состояния
+
+1.3. converters.py
+    - Класс Converter
+    - parse(value_str, fmt, nb): преобразует строку в число (int/float)
+        * decimal: float(), затем int если целое
+        * bin_direct: int(value_str, 2) с учетом знака '-'
+        * bin_complement: дополнительный код (2-байта, 4-байта)
+        * hex_direct: int(value_str, 16) с учетом знака '-'
+        * hex_complement: дополнительный код в hex
+        * ieee_bin/ieee_hex: struct.unpack для float/double
+        * unicode_char: ord() одного символа
+        * utf8_char: int.from_bytes(encode('utf-8'))
+    - convert(value, target_fmt, nb): преобразует число в строку
+        * Обратная логика parse
+        * Для двоичного прямого кода: дополнение нулями до байта
+        * Для дополнительного кода: вычисление битовой маски
+        * Для IEEE754: struct.pack
+
+1.4. validators.py
+    - Класс Validator
+    - _patterns: словарь regex паттернов для каждого формата
+        * decimal: "^-?\d*([.,]\d*)?$" (целые и дробные)
+        * bin_direct: "^-?[01]+$"
+        * bin_complement: "^[01]+$" (без знака)
+        * hex_direct: "^-?[0-9A-Fa-f]+$"
+        * hex_complement: "^[0-9A-Fa-f]+$"
+        * ieee_bin: "^[01]+$"
+        * ieee_hex: "^[0-9A-Fa-f]+$"
+        * unicode_char/utf8_char: "^.$" (один символ)
+    - validate(text, fmt): проверяет строку на соответствие паттерну
+    - Пустая строка всегда валидна
+
+1.5. highlighters.py
+    - Класс ByteHighlighter (QSyntaxHighlighter)
+    - Подсветка байтов разными цветами фона
+    - Для двоичных форматов: шаг 8 символов (1 байт)
+    - Для HEX форматов: шаг 2 символа (1 байт)
+    - Подсветка с младшего байта (правый байт - первый цвет)
+    - Виртуальные нули для выравнивания
+    - 8 цветов, циклическое повторение
+
+1.6. styles.py
+    - STYLESHEET: CSS стили для QPlainTextEdit и QPushButton
+    - В current версии не подключен (опционально)
+
+==================================================
+2. GUI ВИДЖЕТЫ (widgets/)
+==================================================
+
+2.1. widgets/base_field.py
+    - Класс NumberField (QFrame)
+    - Базовое поле ввода с меткой
+    - changed сигнал (str, self) - при изменении валидного текста
+    - _ignore_signal: флаг блокировки рекурсии
+    - _last_valid_text: последний валидный текст
+    - _on_text_changed(): валидация при каждом изменении
+        * Если валидно → сохраняем и emit changed
+        * Если не валидно → восстанавливаем последний валидный текст и курсор
+    - set_value_silent(text): программная установка без сигнала
+    - keyPressEvent(): Ctrl+C копирование, Ctrl+V вставка с очисткой пробелов
+
+2.2. widgets/byte_field.py
+    - Класс ByteGroupField (наследник NumberField)
+    - Поле с подсветкой байтов (без пробелов)
+    - highlighter: экземпляр ByteHighlighter
+    - set_value_silent(): переопределен для инициализации подсветки после установки
+    - _init_highlighter(): создает ByteHighlighter для документа
+
+2.3. widgets/converter_widget.py
+    - Класс ConverterWidget (QWidget)
+    - Управляет всеми полями конвертера
+    - fields: словарь {format_type: NumberField}
+    - active_source: поле с фокусом (подсвечено синим)
+    - updating: флаг блокировки рекурсии при массовом обновлении
+    - visible_fields: какие форматы показывать
+    - _build_fields(): динамическое построение интерфейса по visible_fields
+    - _on_field_changed(text, source): обработчик changed сигнала
+        * Игнорирует вызовы от полей без фокуса (предотвращает скачок подсветки)
+        * Парсит текст в число через Converter.parse()
+        * Обновляет все остальные поля через Converter.convert()
+        * Использует set_value_silent() чтобы не вызывать рекурсию
+    - _update_source_highlight(): подсвечивает активное поле синим фоном
+    - nb_display: QLabel для отображения количества байт
+    - _update_nb_display(): вычисляет количество байт в зависимости от формата
+
+2.4. widgets/modbus_widget.py
+    - Класс ModbusWidget (QWidget)
+    - Протокол: ASCII/RTU/TCP (выпадающий список)
+    - Направление: Request/Response
+    - Для RTU: чекбоксы Slave ID и CRC16
+    - input_edit: QLineEdit для ввода HEX строки
+    - result_text: QTextEdit для отображения результатов
+    - _on_analyze(): парсит введенную строку через ModbusParser
+    - _display_result(): цветное отображение результатов
+        * Protocol, Analysis Settings, Frame structure, Direction
+        * Errors, Frame Details (Slave Address, Unit ID, Function Code)
+        * Exception информация (если есть)
+        * Register Values, CRC/LRC, Transaction ID и т.д.
+    - on_tab_activated(): устанавливает фокус на input_edit
+    - get_config(): возвращает текущие настройки для сохранения
+
+2.5. widgets/log_widget.py
+    - Класс LogWidget (QWidget)
+    - log_file = "modbus_commands.log"
+    - log_text: QTextEdit для отображения лога
+    - add_entry(protocol, direction, raw_hex, result_valid): добавляет запись
+        * Формат: [timestamp] PROTOCOL | DIRECTION | STATUS | HEX
+        * Сохраняет в файл и отображает в виджете
+    - _clear_log(): очистка лога (с подтверждением)
+    - _save_log_as(): сохранение лога в другой файл
+    - _load_log(): загрузка существующего лога при запуске
+
+2.6. widgets/help_widget.py
+    - Класс HelpWidget (QWidget)
+    - QTextBrowser для отображения HTML
+    - HELP_TEXT: инструкция по использованию (HTML с ссылками)
+    - anchorClicked(): открывает ссылки в браузере по умолчанию
+
+2.7. widgets/settings_widget.py
+    - Класс SettingsWidget (QWidget)
+    - settingsChanged сигнал (dict) при изменении чекбоксов
+    - Группы чекбоксов: Прямые коды, Дополнительные коды, IEEE754, Символы
+    - get_visible_fields(): возвращает словарь видимых форматов
+    - _load_settings(): загрузка из visible_fields
+
+2.8. widgets/main_window.py
+    - Класс MainWindow (QMainWindow)
+    - QTabWidget с вкладками: Конвертер, Настройка, Modbus, Лог, Справка
+    - config_manager: загрузка/сохранение настроек
+    - _setup_ui(): создание виджетов и вкладок
+    - _on_tab_changed(): обработка переключения вкладок
+        * Для Modbus: подключает сигналы обновления статусной строки
+        * Для Конвертера: отключает сигналы Modbus
+    - _update_status_info(): обновление статусной строки для конвертера
+    - _update_status_from_modbus(): обновление статусной строки для Modbus
+    - save_config(): сохраняет настройки конвертера и Modbus
+    - resize_to_fit(): динамическое изменение размера окна
+
+==================================================
+3. MODBUS ПАРСЕР (widgets/modbus/)
+==================================================
+
+3.1. widgets/modbus/constants.py
+    - FUNCTION_NAMES: dict {function_code: название}
+        * 1: Read Coils, 2: Read Discrete Inputs, 3: Read Holding Registers
+        * 4: Read Input Registers, 5: Write Single Coil, 6: Write Single Register
+        * 15: Write Multiple Coils, 16: Write Multiple Registers и т.д.
+    - EXCEPTION_CODES: dict {exception_code: описание}
+        * 1: ILLEGAL FUNCTION, 2: ILLEGAL DATA ADDRESS и т.д.
+    - REQUEST_STRUCTURE: dict {function_code: (min_len, max_len, description)}
+        * Для валидации длины PDU запроса
+    - RESPONSE_STRUCTURE: dict {function_code: (min_len, max_len, description)}
+        * Для валидации длины PDU ответа
+    - is_exception_response(): проверка бита 0x80
+    - get_original_function(): сброс бита 0x80
+
+3.2. widgets/modbus/validator.py
+    - Класс ModbusValidator
+    - validate_request_pdu(): проверка длины PDU по REQUEST_STRUCTURE
+    - validate_response_pdu(): проверка длины PDU по RESPONSE_STRUCTURE
+    - validate_exception_pdu(): проверка что exception PDU = 1 байт
+    - validate_tcp(): проверка TCP кадра
+        * Длина не менее 8 байт
+        * Поле Length = 1 + размер PDU
+        * Возвращает список ошибок
+
+3.3. widgets/modbus/parser_pdu.py
+    - Класс PDUParser
+    - parse_request(function_code, pdu):
+        * Для каждого function_code проверяет длину PDU
+        * Извлекает start_address, quantity, byte_count, registers
+        * Поддерживает функции: 1,2,3,4,5,6,15,16
+    - parse_response(function_code, pdu):
+        * Проверка на exception (бит 0x80)
+        * Для функции 3/4: извлекает byte_count и registers
+        * Для функции 6/16: извлекает start_address и quantity
+        * Для функции 1/2: извлекает byte_count и bits (побитово)
+
+3.4. widgets/modbus/parser_tcp.py
+    - Класс TCPParser
+    - parse(data, is_response):
+        * Извлекает MBAP заголовок (7 байт)
+        * transaction_id (2 байта), protocol_id (2 байта)
+        * length (2 байта), unit_id (1 байт)
+        * Проверяет protocol_id == 0
+        * Вызывает PDUParser.parse_request/response для PDU
+
+3.5. widgets/modbus/parser_rtu.py
+    - Класс RTUParser
+    - crc16(data): вычисление CRC-16 Modbus (полином 0xA001)
+    - parse(data, is_response):
+        * Извлекает slave_address (1 байт), function_code (1 байт)
+        * Вычисляет CRC и сравнивает с полученным
+        * PDU = данные между function_code и CRC
+        * Вызывает PDUParser.parse_request/response для PDU
+
+3.6. widgets/modbus/parser_ascii.py
+    - Класс ASCIJParser
+    - lrc(data): вычисление LRC (дополнение до 0)
+    - parse(data, is_response):
+        * Проверяет начало ':' и конец CRLF
+        * Декодирует hex строку в байты
+        * Последний байт - LRC, сравнивает с вычисленным
+        * Извлекает slave_address, function_code
+        * PDU = данные между function_code и LRC
+        * Вызывает PDUParser.parse_request/response для PDU
+
+3.7. widgets/modbus/modbus_parser.py
+    - Класс ModbusParser (фасад)
+    - parse(text, protocol, is_response):
+        * Очищает строку от пробелов и переводов строк
+        * Выбирает парсер по протоколу (TCP/RTU/ASCII)
+    - parse_rtu_with_options(text, is_response, include_slave, include_crc):
+        * Для RTU с опциями (пользователь может исключить Slave ID или CRC)
+        * Парсит ровно то, что передал пользователь (не добавляет отсутствующие части)
+        * Если include_slave=False → slave_address отсутствует в результате
+        * Если include_crc=False → CRC не проверяется, в результате нет полей CRC
+        * structure_valid = True если структура PDU соответствует спецификации
+
+==================================================
+4. ТЕСТЫ (tests/)
+==================================================
+
+4.1. tests/test_modbus_parser.py
+    - Класс TestModbusParser: 60+ юнит-тестов
+    - Тесты из примеров ipc2u.ru для TCP и RTU
+    - Тесты для ASCII протокола
+    - Тесты исключений (exception responses)
+    - Тесты краевых случаев (пустой ввод, пробелы, переводы строк)
+    - Тесты валидации CRC/LRC
+    - Класс TestModbusIntegration: сквозные тесты пар запрос-ответ
+
+4.2. tests/__init__.py
+    - Экспорт TestModbusParser
+
+==================================================
+5. УТИЛИТЫ
+==================================================
+
+5.1. run_tests.py
+    - Запуск unittest.discover() для всех тестов в папке tests/
+    - Вывод результатов в консоль
+
+5.2. debug_parser.py
+    - Отладочный скрипт для проверки Modbus парсера
+    - Вывод результатов парсинга для RTU, ASCII, TCP
+
+5.3. debug_crc.py
+    - Отладочный скрипт для вычисления CRC16
+
+5.4. tree_script.py
+    - Вывод структуры проекта в консоль
+
+5.5. NumConverter.spec
+    - Файл конфигурации PyInstaller для сборки EXE
+
+==================================================
+6. ОСОБЕННОСТИ РЕАЛИЗАЦИИ
+==================================================
+
+6.1. Предотвращение скачка подсветки в конвертере:
+    - В _on_field_changed: if not source.text_edit.hasFocus(): return
+    - Программные обновления полей (без фокуса) не переключают active_source
+
+6.2. Блокировка рекурсивных сигналов:
+    - NumberField._ignore_signal
+    - set_value_silent() устанавливает _ignore_signal = True
+    - _on_text_changed() проверяет _ignore_signal перед обработкой
+
+6.3. Modbus RTU опции:
+    - При include_slave=False: slave_address отсутствует в результате
+    - При include_crc=False: CRC не проверяется, поля CRC отсутствуют
+    - При include_slave=False и include_crc=True: CRC вычисляется без Slave ID (невозможно → ошибка)
+
+6.4. Статусная строка:
+    - Для конвертера: количество байт из ConverterWidget.nb_display
+    - Для Modbus: количество байт = len(HEX строка) // 2 (с округлением вверх)
+
+6.5. Сохранение настроек:
+    - При изменении чекбоксов в SettingsWidget
+    - При изменении протокола/направления в ModbusWidget
+    - При изменении видимых полей в ConverterWidget
