@@ -40,7 +40,9 @@ class LogWidget(QWidget):
         # Текстовое поле для лога
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Courier New", 9))
+        # self.log_text.setFont(QFont("Courier New", 9))
+        from widgets.base_field import get_mono_font
+        self.log_text.setFont(get_mono_font(9))
         layout.addWidget(self.log_text)
     
     def _load_log(self):

@@ -1,4 +1,4 @@
-# widgets/modbus/parser_tcp.py
+# widgets/modbus/parser_tcp.py (исправлен)
 # Python 3.11+, PyQt6
 
 from typing import Dict, Any
@@ -9,7 +9,7 @@ class TCPParser:
     
     @classmethod
     def parse(cls, data: bytes, is_response: bool) -> Dict[str, Any]:
-        result = {"protocol": "TCP", "valid": False, "errors": []}
+        result = {"protocol": "TCP", "valid": False, "errors": [], "warnings": []}
 
         if len(data) < 8:
             result["errors"].append(f"Too short: {len(data)} bytes (min 8)")
@@ -23,6 +23,18 @@ class TCPParser:
 
         if result["protocol_id"] != 0:
             result["errors"].append(f"Protocol ID not zero: {result['protocol_id']}")
+            result["warnings"].append("Invalid protocol ID (should be 0x0000 for Modbus TCP)")
+            result["structure_valid"] = False
+            return result
+
+        # Проверка соответствия Length фактической длине данных
+        actual_length = len(data) - 7
+        if result["length"] != actual_length:
+            warning = f"Length field mismatch: declared {result['length']} bytes, actual {actual_length} bytes"
+            result["warnings"].append(warning)
+
+        if result["length"] == 0:
+            result["warnings"].append("Length field is 0 - empty Modbus TCP frame (no PDU data)")
             result["structure_valid"] = False
             return result
 
@@ -38,7 +50,17 @@ class TCPParser:
         else:
             pdu_result = PDUParser.parse_request(function_code, pdu)
         
+        # Сохраняем существующие предупреждения перед обновлением
+        existing_warnings = result.get("warnings", []).copy()
+        
+        # Обновляем результат
         result.update(pdu_result)
+        
+        # Восстанавливаем предупреждения из TCP-заголовка
+        if existing_warnings:
+            if "warnings" not in result:
+                result["warnings"] = []
+            result["warnings"].extend(existing_warnings)
         
         if result.get("errors"):
             result["valid"] = False

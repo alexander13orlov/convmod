@@ -1,12 +1,13 @@
-# widgets/base_field.py (окончательное исправление)
+# widgets/base_field.py (исправлен)
 # Python 3.11+, PyQt6
 
 import logging
 from typing import Optional
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QApplication
-from PyQt6.QtCore import Qt, pyqtSignal, QMetaObject, Q_ARG
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont, QPalette, QTextCursor
 from validators import Validator
+from utils.font.font_loader import get_mono_font
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class NumberField(QFrame):
         
         self.text_edit: QPlainTextEdit = QPlainTextEdit()
         self.text_edit.setMaximumHeight(60 if is_long else 40)
-        self.text_edit.setFont(QFont("Courier New", 10))
+        self.text_edit.setFont(get_mono_font(10))
         self.text_edit.textChanged.connect(self._on_text_changed)
         layout.addWidget(self.text_edit, stretch=1)
         

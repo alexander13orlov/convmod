@@ -1,4 +1,4 @@
-# widgets/modbus/parser_pdu.py (исправлен - добавлена функция 04)
+# widgets/modbus/parser_pdu.py (добавлены предупреждения)
 # Python 3.11+, PyQt6
 
 from typing import Dict, Any
@@ -14,7 +14,8 @@ class PDUParser:
             "function_code": function_code,
             "function_name": FUNCTION_NAMES.get(function_code, f"Unknown (0x{function_code:02X})"),
             "is_exception": False,
-            "errors": []
+            "errors": [],
+            "warnings": []
         }
         
         if function_code & 0x80:
@@ -26,6 +27,11 @@ class PDUParser:
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
+                # Предупреждения для подозрительных значений
+                if result["quantity"] == 0:
+                    result["warnings"].append("Quantity is 0 - no registers to read")
+                if result["quantity"] > 125:
+                    result["warnings"].append(f"Quantity {result['quantity']} exceeds typical maximum (125 registers)")
             else:
                 result["errors"].append(f"Invalid PDU length for function 03: expected 4 bytes, got {len(pdu)}")
         
@@ -33,6 +39,10 @@ class PDUParser:
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
+                if result["quantity"] == 0:
+                    result["warnings"].append("Quantity is 0 - no registers to read")
+                if result["quantity"] > 125:
+                    result["warnings"].append(f"Quantity {result['quantity']} exceeds typical maximum (125 registers)")
             else:
                 result["errors"].append(f"Invalid PDU length for function 04: expected 4 bytes, got {len(pdu)}")
                 
@@ -49,6 +59,8 @@ class PDUParser:
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
                 result["byte_count"] = pdu[4]
                 expected_data_len = result["byte_count"]
+                if result["quantity"] == 0:
+                    result["warnings"].append("Quantity is 0 - no registers to write")
                 if len(pdu) == 5 + expected_data_len:
                     result["data_bytes"] = pdu[5:5+expected_data_len]
                     result["registers"] = []
@@ -65,6 +77,10 @@ class PDUParser:
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
+                if result["quantity"] == 0:
+                    result["warnings"].append("Quantity is 0 - no coils to read")
+                if result["quantity"] > 2000:
+                    result["warnings"].append(f"Quantity {result['quantity']} exceeds typical maximum (2000 coils)")
             else:
                 result["errors"].append(f"Invalid PDU length for function {function_code:02X}: expected 4 bytes, got {len(pdu)}")
                 
@@ -72,6 +88,8 @@ class PDUParser:
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["value"] = (pdu[2] << 8) | pdu[3]
+                if result["value"] not in [0x0000, 0xFF00]:
+                    result["warnings"].append(f"Invalid coil value: 0x{result['value']:04X} (should be 0x0000 or 0xFF00)")
             else:
                 result["errors"].append(f"Invalid PDU length for function 05: expected 4 bytes, got {len(pdu)}")
                 
@@ -80,6 +98,8 @@ class PDUParser:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
                 result["byte_count"] = pdu[4]
+                if result["quantity"] == 0:
+                    result["warnings"].append("Quantity is 0 - no coils to write")
             else:
                 result["errors"].append(f"Invalid PDU length for function 15: need at least 5 bytes, got {len(pdu)}")
                 
@@ -93,7 +113,8 @@ class PDUParser:
         result = {
             "function_code": function_code,
             "is_exception": False,
-            "errors": []
+            "errors": [],
+            "warnings": []
         }
         
         if function_code & 0x80:

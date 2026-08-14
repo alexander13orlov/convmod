@@ -13,28 +13,39 @@ logger = logging.getLogger(__name__)
 
 class ModbusParser:
     
+
+# widgets/modbus/modbus_parser.py - исправленный метод parse
+
     @classmethod
     def parse(cls, text: str, protocol: str, is_response: bool) -> Dict[str, Any]:
         clean = text.strip().replace(' ', '').replace('\n', '').replace('\r', '')
         if not clean:
-            return {"valid": False, "errors": ["Empty input"]}
+            return {"valid": False, "errors": ["Empty input"], "warnings": []}
 
         protocol_upper = protocol.upper()
         
         try:
             if protocol_upper == "ASCII":
-                return ASCIJParser.parse(clean.encode('ascii'), is_response)
+                result = ASCIJParser.parse(clean.encode('ascii'), is_response)
             elif protocol_upper == "RTU":
-                return RTUParser.parse(bytes.fromhex(clean), is_response)
+                result = RTUParser.parse(bytes.fromhex(clean), is_response)
             elif protocol_upper == "TCP":
-                return TCPParser.parse(bytes.fromhex(clean), is_response)
+                result = TCPParser.parse(bytes.fromhex(clean), is_response)
             else:
-                return {"valid": False, "errors": [f"Unknown protocol: {protocol}"]}
+                return {"valid": False, "errors": [f"Unknown protocol: {protocol}"], "warnings": []}
+            
+            # Убеждаемся, что warnings есть всегда
+            if "warnings" not in result:
+                result["warnings"] = []
+            
+            return result
+            
         except ValueError as e:
-            return {"valid": False, "errors": [f"Invalid hex: {str(e)}"]}
+            return {"valid": False, "errors": [f"Invalid hex: {str(e)}"], "warnings": []}
         except Exception as e:
             logger.exception("Parse error")
-            return {"valid": False, "errors": [f"Parse error: {str(e)}"]}
+            return {"valid": False, "errors": [f"Parse error: {str(e)}"], "warnings": []}
+
     
     @classmethod
     def parse_rtu_with_options(cls, text: str, is_response: bool, 
