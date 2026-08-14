@@ -27,7 +27,10 @@ class ModbusWidget(QWidget):
     
     def set_log_widget(self, log_widget: LogWidget):
         self.log_widget = log_widget
-    
+
+
+# widgets/modbus_widget.py - исправленный метод _setup_ui()
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(5)
@@ -82,10 +85,14 @@ class ModbusWidget(QWidget):
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
         self.result_text.setFont(QFont("Courier New", 9))
-        self.result_text.setMaximumHeight(300)
+        # Удалить строку: self.result_text.setMaximumHeight(300)
         result_layout.addWidget(self.result_text)
+        
+        # Добавить растяжение
+        result_layout.setStretchFactor(self.result_text, 1)
+        
         layout.addWidget(result_group)
-    
+   
     def _on_protocol_changed(self):
         protocol = self.protocol_combo.currentText()
         if protocol == "RTU":
