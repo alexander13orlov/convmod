@@ -1,26 +1,32 @@
+# main.py
 import sys
-import ctypes
+import os
 import logging
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QIcon
 from widgets.main_window import MainWindow
 
-# Устанавливаем уникальный AppUserModelID для Windows (до создания QApplication)
+# Устанавливаем уникальный AppUserModelID для Windows
 try:
-    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("company.converter.numconverter.v1")
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("company.converter.convmod.v1")
 except AttributeError:
-    # Не Windows — игнорируем
     pass
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 def main() -> None:
     app = QApplication(sys.argv)
-    
-    # Устанавливаем иконку приложения (для заголовка окна)
     app.setWindowIcon(QIcon("favicon.ico"))
     
     window = MainWindow()
+    
+    # Получаем полный путь к исполняемому файлу
+    exe_path = QApplication.applicationFilePath()
+    
+    # Устанавливаем заголовок с полным путем
+    window.setWindowTitle(f"ConvMod - {exe_path}")
+    
     window.show()
     sys.exit(app.exec())
 

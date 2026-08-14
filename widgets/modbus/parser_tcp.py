@@ -1,4 +1,4 @@
-# widgets/modbus/parser_tcp.py (исправлен)
+# widgets/modbus/parser_tcp.py (исправлен - правильный расчет actual_length)
 # Python 3.11+, PyQt6
 
 from typing import Dict, Any
@@ -28,7 +28,9 @@ class TCPParser:
             return result
 
         # Проверка соответствия Length фактической длине данных
-        actual_length = len(data) - 7
+        # Заголовок: Transaction(2) + Protocol(2) + Length(2) = 6 байт
+        # Unit ID и PDU считаются в Length
+        actual_length = len(data) - 6  # отбрасываем только первые 6 байт (без Unit ID)
         if result["length"] != actual_length:
             warning = f"Length field mismatch: declared {result['length']} bytes, actual {actual_length} bytes"
             result["warnings"].append(warning)
