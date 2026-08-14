@@ -1,4 +1,4 @@
-# widgets/modbus_widget.py (полный исправленный файл)
+# widgets/modbus_widget.py (исправлен - строка 112)
 # Python 3.11+, PyQt6
 
 import logging
@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QTextCursor, QColor, QTextCharFormat
 from widgets.modbus.modbus_parser import ModbusParser
+from widgets.modbus.parser_pdu import PDUParser
 from widgets.log_widget import LogWidget
 from widgets.base_field import get_mono_font
 
@@ -72,7 +73,6 @@ class ModbusWidget(QWidget):
 
         self.input_edit = QLineEdit()
         self.input_edit.setPlaceholderText("HEX (пробелы игнорируются)")
-        # self.input_edit.setFont(QFont("Courier New", 10))
         self.input_edit.setFont(get_mono_font(10))
         self.input_edit.setMaximumHeight(30)
         self.input_edit.textChanged.connect(self._on_analyze)
@@ -83,8 +83,6 @@ class ModbusWidget(QWidget):
         result_layout.setContentsMargins(5, 5, 5, 5)
         self.result_text = QTextEdit()
         self.result_text.setReadOnly(True)
-        # self.result_text.setFont(QFont("Courier New", 9))
-        
         self.result_text.setFont(get_mono_font(9))
         result_layout.addWidget(self.result_text)
         result_layout.setStretchFactor(self.result_text, 1)
@@ -109,11 +107,12 @@ class ModbusWidget(QWidget):
     
     def _delayed_save(self):
         parent = self.parent()
-        try:
-            if parent is not None and hasattr(parent, 'save_config'):
-                parent.save_config()  # type: ignore[attr-defined]
-        except AttributeError:
-            pass
+        # Используем hasattr с проверкой типа
+        if parent is not None and hasattr(parent, 'save_config'):
+            # Вызываем через getattr для обхода проверки типов Pylance
+            save_func = getattr(parent, 'save_config', None)
+            if save_func is not None and callable(save_func):
+                save_func()
     
     def get_config(self) -> Dict:
         return {
@@ -168,7 +167,6 @@ class ModbusWidget(QWidget):
         self.result_text.clear()
         cursor = self.result_text.textCursor()
         
-        # Цветовая схема для разных частей кадра
         colors = {
             'header': QColor(0, 0, 255),
             'transaction': QColor(128, 0, 128),
@@ -191,19 +189,15 @@ class ModbusWidget(QWidget):
         is_rtu = protocol == "RTU"
         is_ascii = protocol == "ASCII"
         
-        # Разбиваем raw_hex на байты для цветного отображения
         hex_bytes = [raw_hex[i:i+2].upper() for i in range(0, len(raw_hex), 2)]
         byte_colors = [colors['default']] * len(hex_bytes)
         byte_index = 0
         
-        # Заголовок
         self._append_color(cursor, "=== Modbus Analysis ===\n", colors['header'])
         
-        # Protocol
         if protocol:
             self._append_color(cursor, f"Protocol: {protocol}\n", QColor(0, 0, 0))
         
-        # Frame structure
         if result.get("structure_valid"):
             self._append_color(cursor, "Frame structure: ", QColor(0, 0, 0))
             self._append_color(cursor, "MATCHES settings\n", QColor(0, 128, 0))
@@ -214,14 +208,12 @@ class ModbusWidget(QWidget):
         self._append_color(cursor, f"Direction: {self.direction_combo.currentText()}\n", QColor(0, 0, 0))
         cursor.insertText("\n")
         
-        # ========== Ошибки ==========
         if result.get("errors"):
             self._append_color(cursor, "Errors:\n", QColor(255, 0, 0))
             for err in result["errors"]:
                 self._append_color(cursor, f"  • {err}\n", QColor(255, 0, 0))
             cursor.insertText("\n")
         
-        # ========== Предупреждения ==========
         if result.get("warnings"):
             self._append_color(cursor, "Warnings:\n", colors['warning'])
             for warn in result["warnings"]:
@@ -230,7 +222,6 @@ class ModbusWidget(QWidget):
         
         # ========== TCP ==========
         if is_tcp:
-            # Transaction ID
             if "transaction_id" in result:
                 self._append_color(cursor, "Transaction ID: ", colors['default'])
                 self._append_color(cursor, f"0x{result['transaction_id']:04X}\n", colors['transaction'])
@@ -239,7 +230,6 @@ class ModbusWidget(QWidget):
                     byte_colors[byte_index+1] = colors['transaction']
                     byte_index += 2
             
-            # Protocol ID
             if "protocol_id" in result:
                 self._append_color(cursor, "Protocol ID: ", colors['default'])
                 self._append_color(cursor, f"0x{result['protocol_id']:04X}\n", colors['protocol'])
@@ -248,7 +238,6 @@ class ModbusWidget(QWidget):
                     byte_colors[byte_index+1] = colors['protocol']
                     byte_index += 2
             
-            # Length
             if "length" in result:
                 self._append_color(cursor, "Length: ", colors['default'])
                 self._append_color(cursor, f"0x{result['length']:04X} ({result['length']})\n", colors['length'])
@@ -257,7 +246,6 @@ class ModbusWidget(QWidget):
                     byte_colors[byte_index+1] = colors['length']
                     byte_index += 2
             
-            # Unit ID
             if "unit_id" in result:
                 self._append_color(cursor, "Unit ID: ", colors['default'])
                 self._append_color(cursor, f"0x{result['unit_id']:02X} ({result['unit_id']})\n", colors['unit'])
@@ -270,7 +258,6 @@ class ModbusWidget(QWidget):
         
         # ========== RTU ==========
         if is_rtu:
-            # Slave Address
             if "slave_address" in result and result["slave_address"] is not None:
                 self._append_color(cursor, "Slave Address: ", colors['default'])
                 self._append_color(cursor, f"0x{result['slave_address']:02X} ({result['slave_address']})\n", colors['unit'])
@@ -404,88 +391,25 @@ class ModbusWidget(QWidget):
         # ========== Raw Data с группировкой ==========
         self._append_color(cursor, "Raw Data (HEX):\n", colors['header'])
         
-        hex_bytes_upper = [b.upper() for b in hex_bytes]
+        is_response = self.direction_combo.currentText() == "Response"
+        groups = PDUParser.get_display_groups(result, is_tcp, is_response)
         
-        if is_tcp:
-            groups = []
-            idx = 0
-            
-            if len(hex_bytes_upper) >= 2:
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['transaction']))
-                idx += 2
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['protocol']))
-                idx += 2
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['length']))
-                idx += 2
-            if idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['unit']))
-                idx += 1
-            if idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['function']))
-                idx += 1
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['address']))
-                idx += 2
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['quantity']))
-                idx += 2
-            while idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['default']))
-                idx += 1
-            
-            for i, (text, color) in enumerate(groups):
-                self._append_color(cursor, text, color)
-                if i < len(groups) - 1:
-                    cursor.insertText(" ")
-            cursor.insertText("\n")
-            
-        elif is_rtu:
-            groups = []
-            idx = 0
-            
-            if idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['unit']))
-                idx += 1
-            if idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['function']))
-                idx += 1
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['address']))
-                idx += 2
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['quantity']))
-                idx += 2
-            if idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['byte_count']))
-                idx += 1
-            
-            while idx + 2 <= len(hex_bytes_upper) - 2:
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['register']))
-                idx += 2
-            
-            if idx + 2 <= len(hex_bytes_upper):
-                groups.append((''.join(hex_bytes_upper[idx:idx+2]), colors['crc']))
-                idx += 2
-            
-            while idx < len(hex_bytes_upper):
-                groups.append((hex_bytes_upper[idx], colors['default']))
-                idx += 1
-            
-            for i, (text, color) in enumerate(groups):
-                self._append_color(cursor, text, color)
-                if i < len(groups) - 1:
-                    cursor.insertText(" ")
-            cursor.insertText("\n")
-            
-        else:
+        if not groups:
+            hex_bytes_upper = [b.upper() for b in hex_bytes]
             for i, byte in enumerate(hex_bytes_upper):
                 color = byte_colors[i] if i < len(byte_colors) else colors['default']
                 self._append_color(cursor, byte, color)
                 if i < len(hex_bytes_upper) - 1:
                     cursor.insertText(" ")
             cursor.insertText("\n")
+            return
+        
+        for i, group in enumerate(groups):
+            color = colors.get(group.get("color", "default"), colors["default"])
+            self._append_color(cursor, group["bytes"], color)
+            if i < len(groups) - 1:
+                cursor.insertText(" ")
+        cursor.insertText("\n")
 
     def _append_color(self, cursor: QTextCursor, text: str, color: QColor):
         fmt = QTextCharFormat()

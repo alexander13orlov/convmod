@@ -1,7 +1,7 @@
-# widgets/modbus/parser_pdu.py (добавлены предупреждения)
+# widgets/modbus/parser_pdu.py
 # Python 3.11+, PyQt6
 
-from typing import Dict, Any
+from typing import Dict, Any, List
 from widgets.modbus.constants import FUNCTION_NAMES, EXCEPTION_CODES, get_original_function
 
 
@@ -27,7 +27,6 @@ class PDUParser:
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
-                # Предупреждения для подозрительных значений
                 if result["quantity"] == 0:
                     result["warnings"].append("Quantity is 0 - no registers to read")
                 if result["quantity"] > 125:
@@ -197,3 +196,108 @@ class PDUParser:
             result["errors"].append(f"Unsupported function code: 0x{function_code:02X}")
         
         return result
+    
+    @classmethod
+    def get_display_groups(cls, result: Dict[str, Any], is_tcp: bool, is_response: bool) -> List[Dict[str, Any]]:
+        """
+        Возвращает список групп для отображения в Raw Data.
+        Каждая группа: {"label": str, "bytes": str, "color": str}
+        """
+        groups = []
+        func = result.get("function_code")
+        
+        if is_tcp:
+            # TCP заголовок
+            tid = result.get("transaction_id", 0)
+            groups.append({"label": "Transaction ID", "bytes": f"{tid:04X}", "color": "transaction"})
+            groups.append({"label": "Protocol ID", "bytes": "0000", "color": "protocol"})
+            length = result.get("length", 0)
+            groups.append({"label": "Length", "bytes": f"{length:04X}", "color": "length"})
+            unit = result.get("unit_id", 0)
+            groups.append({"label": "Unit ID", "bytes": f"{unit:02X}", "color": "unit"})
+        
+        # Function Code
+        if func is not None:
+            groups.append({"label": "Function Code", "bytes": f"{func:02X}", "color": "function"})
+        else:
+            return groups
+        
+        # Обработка ответов
+        if is_response:
+            if func in [3, 4]:  # Read Holding/Input Registers
+                byte_count = result.get("byte_count", 0)
+                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
+                registers = result.get("registers", [])
+                for reg in registers:
+                    groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
+            
+            elif func == 6:  # Write Single Register
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                val = result.get("value", 0)
+                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
+            
+            elif func == 16:  # Write Multiple Registers
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                qty = result.get("quantity", 0)
+                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
+            
+            elif func in [1, 2]:  # Read Coils / Discrete Inputs
+                byte_count = result.get("byte_count", 0)
+                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
+                # bits показывать не будем, слишком много
+                if result.get("bits"):
+                    groups.append({"label": "Data", "bytes": "".join([str(b) for b in result["bits"][:8]]), "color": "default"})
+            
+            elif func == 5:  # Write Single Coil
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                val = result.get("value", 0)
+                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
+            
+            elif func == 15:  # Write Multiple Coils
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                qty = result.get("quantity", 0)
+                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
+            
+            else:
+                # Неизвестная функция — просто байты
+                pass
+        
+        # Обработка запросов
+        else:
+            if func in [3, 4, 1, 2]:  # Read functions
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                qty = result.get("quantity", 0)
+                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
+            
+            elif func in [6, 5]:  # Write Single
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                val = result.get("value", 0)
+                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
+            
+            elif func in [16, 15]:  # Write Multiple
+                addr = result.get("start_address", 0)
+                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
+                qty = result.get("quantity", 0)
+                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
+                byte_count = result.get("byte_count", 0)
+                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
+                registers = result.get("registers", [])
+                for reg in registers:
+                    groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
+            
+            elif func is not None and (func & 0x80):
+                # Exception — показываем только exception code
+                if "exception_code" in result:
+                    groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
+            
+            else:
+                # Неизвестная функция — просто байты
+                pass
+        
+        return groups

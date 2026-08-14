@@ -13,9 +13,6 @@ logger = logging.getLogger(__name__)
 
 class ModbusParser:
     
-
-# widgets/modbus/modbus_parser.py - исправленный метод parse
-
     @classmethod
     def parse(cls, text: str, protocol: str, is_response: bool) -> Dict[str, Any]:
         clean = text.strip().replace(' ', '').replace('\n', '').replace('\r', '')
@@ -34,10 +31,8 @@ class ModbusParser:
             else:
                 return {"valid": False, "errors": [f"Unknown protocol: {protocol}"], "warnings": []}
             
-            # Убеждаемся, что warnings есть всегда
             if "warnings" not in result:
                 result["warnings"] = []
-            
             return result
             
         except ValueError as e:
@@ -45,7 +40,6 @@ class ModbusParser:
         except Exception as e:
             logger.exception("Parse error")
             return {"valid": False, "errors": [f"Parse error: {str(e)}"], "warnings": []}
-
     
     @classmethod
     def parse_rtu_with_options(cls, text: str, is_response: bool, 
@@ -53,15 +47,15 @@ class ModbusParser:
                                 include_crc: bool = True) -> Dict[str, Any]:
         clean = text.strip().replace(' ', '').replace('\n', '').replace('\r', '')
         if not clean:
-            return {"valid": False, "errors": ["Empty input"]}
+            return {"valid": False, "errors": ["Empty input"], "warnings": []}
         
         try:
             data = bytes.fromhex(clean)
         except ValueError as e:
-            return {"valid": False, "errors": [f"Invalid hex: {str(e)}"]}
+            return {"valid": False, "errors": [f"Invalid hex: {str(e)}"], "warnings": []}
         
         original_data = clean
-        result = {"protocol": "RTU", "valid": False, "errors": []}
+        result = {"protocol": "RTU", "valid": False, "errors": [], "warnings": []}
         
         data_index = 0
         
@@ -70,6 +64,7 @@ class ModbusParser:
                 result["errors"].append("Data too short for Slave ID")
                 result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
                 result["original_raw"] = original_data
+                result["structure_valid"] = False
                 return result
             result["slave_address"] = data[0]
             data_index = 1
@@ -80,6 +75,7 @@ class ModbusParser:
             result["errors"].append("No function code")
             result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
             result["original_raw"] = original_data
+            result["structure_valid"] = False
             return result
         
         result["function_code"] = data[data_index]
@@ -92,6 +88,7 @@ class ModbusParser:
                 result["errors"].append(f"Data too short for CRC: need at least 2 bytes, got {len(pdu)}")
                 result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
                 result["original_raw"] = original_data
+                result["structure_valid"] = False
                 return result
             pdu_without_crc = pdu[:-2]
             msg_crc = (pdu[-1] << 8) | pdu[-2]
@@ -120,6 +117,12 @@ class ModbusParser:
         
         if pdu_result.get("errors"):
             result["errors"].extend(pdu_result["errors"])
+        
+        # Добавляем предупреждения из PDU
+        if pdu_result.get("warnings"):
+            if "warnings" not in result:
+                result["warnings"] = []
+            result["warnings"].extend(pdu_result["warnings"])
         
         result["settings"] = {
             "slave_id_included": include_slave,
