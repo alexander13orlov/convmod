@@ -1,7 +1,8 @@
-# widgets/modbus_widget.py (исправлен - строка 112)
+# widgets/modbus_widget.py
 # Python 3.11+, PyQt6
 
 import logging
+import re
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
                              QLabel, QLineEdit, QGroupBox, QTextEdit, QCheckBox)
@@ -107,9 +108,7 @@ class ModbusWidget(QWidget):
     
     def _delayed_save(self):
         parent = self.parent()
-        # Используем hasattr с проверкой типа
         if parent is not None and hasattr(parent, 'save_config'):
-            # Вызываем через getattr для обхода проверки типов Pylance
             save_func = getattr(parent, 'save_config', None)
             if save_func is not None and callable(save_func):
                 save_func()
@@ -144,24 +143,23 @@ class ModbusWidget(QWidget):
             self.result_text.clear()
             return
 
-        input_str = raw.replace(' ', '').replace('\n', '').replace('\r', '')
         protocol = self.protocol_combo.currentText()
         is_response = (self.direction_combo.currentText() == "Response")
         
         if protocol == "RTU":
             result = self.parser.parse_rtu_with_options(
-                input_str, is_response, 
+                raw, is_response, 
                 include_slave=self.slave_checkbox.isChecked(),
                 include_crc=self.crc_checkbox.isChecked()
             )
         else:
-            result = self.parser.parse(input_str, protocol, is_response)
+            result = self.parser.parse(raw, protocol, is_response)
         
-        self._display_result(result, input_str)
+        self._display_result(result, raw)
         
         if self.log_widget:
             direction_text = self.direction_combo.currentText()
-            self.log_widget.add_entry(protocol, direction_text, input_str, result.get("valid", False))
+            self.log_widget.add_entry(protocol, direction_text, raw, result.get("valid", False))
 
     def _display_result(self, result: Dict[str, Any], raw_hex: str):
         self.result_text.clear()
@@ -189,7 +187,15 @@ class ModbusWidget(QWidget):
         is_rtu = protocol == "RTU"
         is_ascii = protocol == "ASCII"
         
-        hex_bytes = [raw_hex[i:i+2].upper() for i in range(0, len(raw_hex), 2)]
+        # Для ASCII используем raw_hex_full из результата
+        if is_ascii:
+            display_hex = result.get("raw_hex_full", raw_hex)
+            # Убираем не-HEX символы
+            display_hex = re.sub(r'[^0-9A-Fa-f]', '', display_hex)
+        else:
+            display_hex = result.get("raw_hex_clean", raw_hex)
+        
+        hex_bytes = [display_hex[i:i+2].upper() for i in range(0, len(display_hex), 2)]
         byte_colors = [colors['default']] * len(hex_bytes)
         byte_index = 0
         
@@ -223,32 +229,48 @@ class ModbusWidget(QWidget):
         # ========== TCP ==========
         if is_tcp:
             if "transaction_id" in result:
+                desc = result.get("transaction_id_desc", "")
                 self._append_color(cursor, "Transaction ID: ", colors['default'])
-                self._append_color(cursor, f"0x{result['transaction_id']:04X}\n", colors['transaction'])
+                self._append_color(cursor, f"0x{result['transaction_id']:04X}", colors['transaction'])
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['transaction']
                     byte_colors[byte_index+1] = colors['transaction']
                     byte_index += 2
             
             if "protocol_id" in result:
+                desc = result.get("protocol_id_desc", "")
                 self._append_color(cursor, "Protocol ID: ", colors['default'])
-                self._append_color(cursor, f"0x{result['protocol_id']:04X}\n", colors['protocol'])
+                self._append_color(cursor, f"0x{result['protocol_id']:04X}", colors['protocol'])
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['protocol']
                     byte_colors[byte_index+1] = colors['protocol']
                     byte_index += 2
             
             if "length" in result:
+                desc = result.get("length_desc", "")
                 self._append_color(cursor, "Length: ", colors['default'])
-                self._append_color(cursor, f"0x{result['length']:04X} ({result['length']})\n", colors['length'])
+                self._append_color(cursor, f"0x{result['length']:04X} ({result['length']})", colors['length'])
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['length']
                     byte_colors[byte_index+1] = colors['length']
                     byte_index += 2
             
             if "unit_id" in result:
+                desc = result.get("unit_id_desc", "")
                 self._append_color(cursor, "Unit ID: ", colors['default'])
-                self._append_color(cursor, f"0x{result['unit_id']:02X} ({result['unit_id']})\n", colors['unit'])
+                self._append_color(cursor, f"0x{result['unit_id']:02X} ({result['unit_id']})", colors['unit'])
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['unit']
                     byte_index += 1
@@ -256,23 +278,15 @@ class ModbusWidget(QWidget):
             cursor.insertText("\n")
             self._append_color(cursor, "Frame Details:\n", colors['header'])
         
-        # ========== RTU ==========
-        if is_rtu:
+        # ========== RTU/ASCII ==========
+        if is_rtu or is_ascii:
             if "slave_address" in result and result["slave_address"] is not None:
+                desc = result.get("slave_address_desc", "")
                 self._append_color(cursor, "Slave Address: ", colors['default'])
-                self._append_color(cursor, f"0x{result['slave_address']:02X} ({result['slave_address']})\n", colors['unit'])
-                if byte_index < len(hex_bytes):
-                    byte_colors[byte_index] = colors['unit']
-                    byte_index += 1
-            
-            cursor.insertText("\n")
-            self._append_color(cursor, "Frame Details:\n", colors['header'])
-        
-        # ========== ASCII ==========
-        if is_ascii:
-            if "slave_address" in result and result["slave_address"] is not None:
-                self._append_color(cursor, "Slave Address: ", colors['default'])
-                self._append_color(cursor, f"0x{result['slave_address']:02X} ({result['slave_address']})\n", colors['unit'])
+                self._append_color(cursor, f"0x{result['slave_address']:02X} ({result['slave_address']})", colors['unit'])
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['unit']
                     byte_index += 1
@@ -282,9 +296,13 @@ class ModbusWidget(QWidget):
         
         # ========== Function Code ==========
         if "function_code" in result:
+            desc = result.get("function_code_desc", "")
             self._append_color(cursor, "  Function Code: ", colors['default'])
             self._append_color(cursor, f"0x{result['function_code']:02X} ", colors['function'])
-            self._append_color(cursor, f"({result.get('function_name', 'Unknown')})\n", colors['function'])
+            self._append_color(cursor, f"({result.get('function_name', 'Unknown')})", colors['function'])
+            if desc:
+                self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+            cursor.insertText("\n")
             if byte_index < len(hex_bytes):
                 byte_colors[byte_index] = colors['function']
                 byte_index += 1
@@ -295,16 +313,24 @@ class ModbusWidget(QWidget):
                 self._append_color(cursor, "  Original Function: ", colors['default'])
                 self._append_color(cursor, f"0x{result['original_function_code']:02X}\n", colors['function'])
             if "exception_code" in result:
+                desc = result.get("exception_code_desc", "")
                 self._append_color(cursor, "  Exception Code: ", colors['default'])
-                self._append_color(cursor, f"0x{result['exception_code']:02X}\n", QColor(255, 0, 0))
+                self._append_color(cursor, f"0x{result['exception_code']:02X}", QColor(255, 0, 0))
+                if desc:
+                    self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+                cursor.insertText("\n")
             if "exception_description" in result:
                 self._append_color(cursor, "  Exception Description: ", colors['default'])
                 self._append_color(cursor, f"{result['exception_description']}\n", QColor(255, 0, 0))
         
         # ========== Start Address ==========
         if "start_address" in result:
+            desc = result.get("start_address_desc", "")
             self._append_color(cursor, "  Start Address: ", colors['default'])
-            self._append_color(cursor, f"0x{result['start_address']:04X} ({result['start_address']})\n", colors['address'])
+            self._append_color(cursor, f"0x{result['start_address']:04X} ({result['start_address']})", colors['address'])
+            if desc:
+                self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+            cursor.insertText("\n")
             if byte_index < len(hex_bytes):
                 byte_colors[byte_index] = colors['address']
                 byte_colors[byte_index+1] = colors['address']
@@ -312,8 +338,12 @@ class ModbusWidget(QWidget):
         
         # ========== Quantity ==========
         if "quantity" in result:
+            desc = result.get("quantity_desc", "")
             self._append_color(cursor, "  Quantity: ", colors['default'])
-            self._append_color(cursor, f"0x{result['quantity']:04X} ({result['quantity']})\n", colors['quantity'])
+            self._append_color(cursor, f"0x{result['quantity']:04X} ({result['quantity']})", colors['quantity'])
+            if desc:
+                self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+            cursor.insertText("\n")
             if byte_index < len(hex_bytes):
                 byte_colors[byte_index] = colors['quantity']
                 byte_colors[byte_index+1] = colors['quantity']
@@ -321,8 +351,12 @@ class ModbusWidget(QWidget):
         
         # ========== Value ==========
         if "value" in result:
+            desc = result.get("value_desc", "")
             self._append_color(cursor, "  Value: ", colors['default'])
-            self._append_color(cursor, f"0x{result['value']:04X} ({result['value']})\n", colors['register'])
+            self._append_color(cursor, f"0x{result['value']:04X} ({result['value']})", colors['register'])
+            if desc:
+                self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+            cursor.insertText("\n")
             if byte_index < len(hex_bytes):
                 byte_colors[byte_index] = colors['register']
                 byte_colors[byte_index+1] = colors['register']
@@ -330,22 +364,30 @@ class ModbusWidget(QWidget):
         
         # ========== Byte Count ==========
         if "byte_count" in result:
+            desc = result.get("byte_count_desc", "")
             self._append_color(cursor, "  Byte Count: ", colors['default'])
-            self._append_color(cursor, f"0x{result['byte_count']:02X} ({result['byte_count']})\n", colors['byte_count'])
+            self._append_color(cursor, f"0x{result['byte_count']:02X} ({result['byte_count']})", colors['byte_count'])
+            if desc:
+                self._append_color(cursor, f"  [{desc}]", QColor(128, 128, 128))
+            cursor.insertText("\n")
             if byte_index < len(hex_bytes):
                 byte_colors[byte_index] = colors['byte_count']
                 byte_index += 1
         
         # ========== Register Values ==========
         if "registers" in result and result["registers"]:
+            desc = result.get("registers_desc", "")
             self._append_color(cursor, "  Register Values:\n", colors['default'])
+            if desc:
+                self._append_color(cursor, f"    [{desc}]\n", QColor(128, 128, 128))
             for i, val in enumerate(result["registers"]):
                 self._append_color(cursor, f"    Register {i+1}: ", colors['default'])
-                self._append_color(cursor, f"0x{val:04X} ({val})\n", colors['register'])
+                self._append_color(cursor, f"0x{val:04X} ({val})", colors['register'])
                 if byte_index < len(hex_bytes):
                     byte_colors[byte_index] = colors['register']
                     byte_colors[byte_index+1] = colors['register']
                     byte_index += 2
+                cursor.insertText("\n")
         
         # ========== CRC ==========
         if "crc_received" in result:
