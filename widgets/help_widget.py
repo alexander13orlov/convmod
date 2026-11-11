@@ -108,6 +108,9 @@ Ctrl+V - вставка в активное поле
 <a href="https://ru.wikipedia.org/wiki/UTF-8">UTF-8 (Wikipedia)</a>
 <a href="https://symbl.cc/ru/unicode-table/">Unicode таблица (symbl.cc)</a>
 <a href="https://ru.wikipedia.org/wiki/Modbus">Modbus (Wikipedia)</a>
+<a href="https://en.wikipedia.org/wiki/Modbus">Modbus (Wikipedia, EN — функциональные коды, RTU/ASCII/TCP, примеры кадров)</a>
+<a href="https://modbus.org">Modbus Organization — официальный сайт</a>
+<a href="https://modbus.org/specifications">Modbus — официальные спецификации протокола (RTU/ASCII/TCP, скачивание после согласия с EULA)</a>
 """
 
 
