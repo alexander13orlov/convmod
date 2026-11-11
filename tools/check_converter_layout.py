@@ -1,8 +1,8 @@
 # tools/check_converter_layout.py
 # Проверка вкладки Конвертер: подпись смещена вправо (indent = 4 px),
-# левый край поля подтянут к подписям (фикс. ширина подписи 155 px),
+# левый край поля подтянут к подписям (фикс. ширина подписи 146 px),
 # текст самой длинной подписи не обрезается,
-# зазор от конца самой длинной подписи до левого края поля = 17 px.
+# зазор от конца самой длинной подписи до левого края поля = 8 px.
 # Запуск: python tools\check_converter_layout.py -> ожидается "LAYOUT OK"
 import sys
 import os
@@ -14,9 +14,9 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 from widgets.main_window import MainWindow
 
-LABEL_WIDTH = 155
+LABEL_WIDTH = 146
 LABEL_INDENT = 4
-GAP_EXPECTED = 17
+GAP_EXPECTED = 8
 
 
 def main() -> None:
