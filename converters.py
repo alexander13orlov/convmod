@@ -3,10 +3,22 @@
 # Python 3.11+, PyQt6
 
 import struct
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 
 
 class Converter:
+    # IEEE754: число байтов -> формат struct (старший байт первым)
+    _IEEE_FORMATS: Dict[int, str] = {4: '>f', 8: '>d'}
+
+    @staticmethod
+    def _coerce_int(value: Union[int, float]) -> Optional[int]:
+        """Целое: int как есть, float с нулевой дробной частью — преобразован, иначе None."""
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return None
+
     @staticmethod
     def parse(value_str: str, fmt: str, nb: int) -> Optional[Union[int, float]]:
         try:
@@ -46,19 +58,18 @@ class Converter:
                 if val & (1 << (actual_bits - 1)):
                     val -= 1 << actual_bits
                 return val
-            elif fmt == 'ieee_bin':
-                if nb not in (4, 8) or len(value_str) != nb * 8:
+            elif fmt in ('ieee_bin', 'ieee_hex'):
+                if nb not in (4, 8):
                     return None
-                b: bytes = int(value_str, 2).to_bytes(nb, 'big')
-                result = struct.unpack('>f' if nb == 4 else '>d', b)[0]
-                if result.is_integer():
-                    return int(result)
-                return result
-            elif fmt == 'ieee_hex':
-                if nb not in (4, 8) or len(value_str) != nb * 2:
-                    return None
-                b = bytes.fromhex(value_str)
-                result = struct.unpack('>f' if nb == 4 else '>d', b)[0]
+                if fmt == 'ieee_bin':
+                    if len(value_str) != nb * 8:
+                        return None
+                    b: bytes = int(value_str, 2).to_bytes(nb, 'big')
+                else:
+                    if len(value_str) != nb * 2:
+                        return None
+                    b = bytes.fromhex(value_str)
+                result = struct.unpack(Converter._IEEE_FORMATS[nb], b)[0]
                 if result.is_integer():
                     return int(result)
                 return result
@@ -79,12 +90,9 @@ class Converter:
                     return f"{value:.10f}".rstrip('0').rstrip('.') if '.' in f"{value:.10f}" else str(int(value))
                 return str(value)
             elif target_fmt == 'bin_direct':
-                if not isinstance(value, int):
-                    # Если float с нулевой дробной частью, преобразуем в int
-                    if isinstance(value, float) and value.is_integer():
-                        value = int(value)
-                    else:
-                        return None
+                value = Converter._coerce_int(value)
+                if value is None:
+                    return None
                 if value >= 0:
                     result: str = bin(value)[2:]
                     if len(result) % 8 != 0:
@@ -95,23 +103,17 @@ class Converter:
                     abs_result = '0' * (8 - len(abs_result) % 8) + abs_result
                 return '-' + abs_result
             elif target_fmt == 'bin_complement':
-                if not isinstance(value, int):
-                    if isinstance(value, float) and value.is_integer():
-                        value = int(value)
-                    else:
-                        return None
-                if value >= 0:
-                    bits = max(8, (value.bit_length() + 7) // 8 * 8)
-                else:
-                    bits = max(8, (abs(value).bit_length() + 7) // 8 * 8)
+                value = Converter._coerce_int(value)
+                if value is None:
+                    return None
+                # bit_length() у отрицательного числа совпадает с abs(value)
+                bits = max(8, (value.bit_length() + 7) // 8 * 8)
                 mask: int = (1 << bits) - 1
                 return f"{value & mask:0{bits}b}"
             elif target_fmt == 'hex_direct':
-                if not isinstance(value, int):
-                    if isinstance(value, float) and value.is_integer():
-                        value = int(value)
-                    else:
-                        return None
+                value = Converter._coerce_int(value)
+                if value is None:
+                    return None
                 if value >= 0:
                     result = hex(value)[2:].upper()
                     if len(result) % 2 != 0:
@@ -122,44 +124,32 @@ class Converter:
                     abs_result = '0' + abs_result
                 return '-' + abs_result
             elif target_fmt == 'hex_complement':
-                if not isinstance(value, int):
-                    if isinstance(value, float) and value.is_integer():
-                        value = int(value)
-                    else:
-                        return None
-                if value >= 0:
-                    bits = max(8, (value.bit_length() + 7) // 8 * 8)
-                else:
-                    bits = max(8, (abs(value).bit_length() + 7) // 8 * 8)
+                value = Converter._coerce_int(value)
+                if value is None:
+                    return None
+                bits = max(8, (value.bit_length() + 7) // 8 * 8)
                 mask = (1 << bits) - 1
                 hex_digits = bits // 4
                 return f"{value & mask:0{hex_digits}X}"
-            elif target_fmt == 'ieee_bin':
+            elif target_fmt in ('ieee_bin', 'ieee_hex'):
                 if nb not in (4, 8):
                     return None
                 # Всегда преобразуем в float для IEEE754
-                float_val = float(value)
-                packed: bytes = struct.pack('>f' if nb == 4 else '>d', float_val)
-                return ''.join(f"{b:08b}" for b in packed)
-            elif target_fmt == 'ieee_hex':
-                if nb not in (4, 8):
-                    return None
-                float_val = float(value)
-                packed = struct.pack('>f' if nb == 4 else '>d', float_val)
+                packed: bytes = struct.pack(Converter._IEEE_FORMATS[nb], float(value))
+                if target_fmt == 'ieee_bin':
+                    return ''.join(f"{b:08b}" for b in packed)
                 return packed.hex().upper()
             elif target_fmt == 'unicode_char':
-                if isinstance(value, float) and value.is_integer():
-                    value = int(value)
-                if not isinstance(value, int):
+                value = Converter._coerce_int(value)
+                if value is None:
                     return None
                 try:
                     return chr(value)
                 except (ValueError, OverflowError):
                     return None
             elif target_fmt == 'utf8_char':
-                if isinstance(value, float) and value.is_integer():
-                    value = int(value)
-                if not isinstance(value, int):
+                value = Converter._coerce_int(value)
+                if value is None:
                     return None
                 try:
                     byte_len: int = (value.bit_length() + 7) // 8 if value >= 0 else 1

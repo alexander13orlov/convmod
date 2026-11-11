@@ -2,14 +2,31 @@
 # Python 3.11+, PyQt6
 
 import os
+import sys
 import logging
 from typing import Optional
 from PyQt6.QtGui import QFontDatabase, QFont
 
 logger = logging.getLogger(__name__)
 
-# Путь к папке со шрифтами относительно корня проекта
-FONT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "utils", "font", "hack")
+
+def _hack_dir() -> str:
+    """Путь к папке со шрифтами: в dev — рядом с файлом, в EXE — из sys._MEIPASS."""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass is not None:
+        candidate = os.path.join(meipass, "utils", "font", "hack")
+        if os.path.isdir(candidate):
+            return candidate
+    candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "hack")
+    if os.path.isdir(candidate):
+        return candidate
+    if meipass is not None:
+        return os.path.join(meipass, "utils", "font", "hack")
+    return candidate
+
+
+# Путь к папке со шрифтами (dev: рядом с файлом; EXE: из sys._MEIPASS)
+FONT_PATH = _hack_dir()
 
 def load_hack_font() -> bool:
     """Загружает шрифт Hack из папки проекта в QFontDatabase.

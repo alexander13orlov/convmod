@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 from widgets.modbus.parser_tcp import TCPParser
 from widgets.modbus.parser_rtu import RTUParser
 from widgets.modbus.parser_ascii import ASCIJParser
-from widgets.modbus.parser_pdu import PDUParser
+from widgets.modbus.parser_pdu import PDUParser, merge_pdu_result
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +21,29 @@ class ModbusParser:
     def _clean_hex(cls, text: str) -> str:
         """Извлекает только HEX символы из строки (0-9, A-F, a-f)"""
         return ''.join(HEX_PATTERN.findall(text))
+
+    @staticmethod
+    def _empty_result() -> Dict[str, Any]:
+        """Результат для пустого входа (после очистки)."""
+        return {"valid": False, "errors": ["Empty input"], "warnings": []}
+
+    @classmethod
+    def _rtu_error(cls, result: Dict[str, Any], error: str,
+                   include_slave: bool, include_crc: bool, clean: str) -> Dict[str, Any]:
+        """Ранний выход из разбора RTU: фиксирует ошибку и стандартные поля."""
+        result["errors"].append(error)
+        result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
+        result["original_raw"] = clean
+        result["raw_hex_clean"] = clean
+        result["structure_valid"] = False
+        return result
     
     @classmethod
     def parse(cls, text: str, protocol: str, is_response: bool) -> Dict[str, Any]:
         # Очищаем входную строку от всех не-HEX символов
         clean = cls._clean_hex(text)
         if not clean:
-            return {"valid": False, "errors": ["Empty input"], "warnings": []}
+            return cls._empty_result()
 
         protocol_upper = protocol.upper()
         
@@ -62,38 +78,27 @@ class ModbusParser:
         # Очищаем входную строку от всех не-HEX символов
         clean = cls._clean_hex(text)
         if not clean:
-            return {"valid": False, "errors": ["Empty input"], "warnings": []}
-        
+            return cls._empty_result()
+
         try:
             data = bytes.fromhex(clean)
         except ValueError as e:
             return {"valid": False, "errors": [f"Invalid hex: {str(e)}"], "warnings": []}
         
-        original_data = clean
         result = {"protocol": "RTU", "valid": False, "errors": [], "warnings": []}
         
         data_index = 0
         
         if include_slave:
             if len(data) < 1:
-                result["errors"].append("Data too short for Slave ID")
-                result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
-                result["original_raw"] = original_data
-                result["raw_hex_clean"] = clean
-                result["structure_valid"] = False
-                return result
+                return cls._rtu_error(result, "Data too short for Slave ID", include_slave, include_crc, clean)
             result["slave_address"] = data[0]
             data_index = 1
         else:
             result["slave_address"] = None
         
         if len(data) <= data_index:
-            result["errors"].append("No function code")
-            result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
-            result["original_raw"] = original_data
-            result["raw_hex_clean"] = clean
-            result["structure_valid"] = False
-            return result
+            return cls._rtu_error(result, "No function code", include_slave, include_crc, clean)
         
         result["function_code"] = data[data_index]
         data_index += 1
@@ -102,12 +107,8 @@ class ModbusParser:
         
         if include_crc:
             if len(pdu) < 2:
-                result["errors"].append(f"Data too short for CRC: need at least 2 bytes, got {len(pdu)}")
-                result["settings"] = {"slave_id_included": include_slave, "crc_included": include_crc}
-                result["original_raw"] = original_data
-                result["raw_hex_clean"] = clean
-                result["structure_valid"] = False
-                return result
+                return cls._rtu_error(result, f"Data too short for CRC: need at least 2 bytes, got {len(pdu)}",
+                                      include_slave, include_crc, clean)
             pdu_without_crc = pdu[:-2]
             msg_crc = (pdu[-1] << 8) | pdu[-2]
             result["crc_received"] = f"0x{msg_crc:04X}"
@@ -131,25 +132,20 @@ class ModbusParser:
         else:
             pdu_result = PDUParser.parse_request(result["function_code"], pdu)
         
-        result.update(pdu_result)
-        
-        if pdu_result.get("errors"):
-            result["errors"].extend(pdu_result["errors"])
-        
-        if pdu_result.get("warnings"):
-            if "warnings" not in result:
-                result["warnings"] = []
-            result["warnings"].extend(pdu_result["warnings"])
+        merge_pdu_result(result, pdu_result)
         
         result["settings"] = {
             "slave_id_included": include_slave,
             "crc_included": include_crc
         }
         
-        result["original_raw"] = original_data
+        result["original_raw"] = clean
         result["raw_hex_clean"] = clean
-        
-        structure_valid = len([e for e in result["errors"] if "CRC" not in e]) == 0
+
+        crc_markers = ("CRC mismatch", "CRC cannot be verified")
+        structure_valid = all(
+            any(marker in err for marker in crc_markers) for err in result["errors"]
+        )
         result["structure_valid"] = structure_valid
         result["valid"] = structure_valid
         

@@ -2,7 +2,7 @@
 # Python 3.11+, PyQt6
 
 from typing import Dict, Any
-from widgets.modbus.parser_pdu import PDUParser
+from widgets.modbus.parser_pdu import PDUParser, merge_pdu_result
 
 
 class RTUParser:
@@ -21,10 +21,11 @@ class RTUParser:
     
     @classmethod
     def parse(cls, data: bytes, is_response: bool) -> Dict[str, Any]:
-        result = {"protocol": "RTU", "valid": False, "errors": []}
+        result = {"protocol": "RTU", "valid": False, "errors": [], "warnings": []}
         
         if len(data) < 4:
             result["errors"].append(f"Too short: {len(data)} bytes (min 4)")
+            result["structure_valid"] = False
             return result
 
         result["slave_address"] = data[0]
@@ -46,11 +47,14 @@ class RTUParser:
         else:
             pdu_result = PDUParser.parse_request(function_code, pdu)
         
-        result.update(pdu_result)
+        merge_pdu_result(result, pdu_result)
         
-        if result.get("errors") or pdu_result.get("errors"):
-            result["valid"] = False
-        else:
-            result["valid"] = True
+        # structure_valid: кадр соответствует структуре, за исключением ошибки CRC
+        # (те же семантики, что в parse_rtu_with_options)
+        crc_markers = ("CRC mismatch",)
+        result["structure_valid"] = all(
+            any(marker in err for marker in crc_markers) for err in result["errors"]
+        )
+        result["valid"] = not result.get("errors")
         
         return result

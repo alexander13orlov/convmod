@@ -3,9 +3,9 @@
 
 import logging
 from typing import Optional
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QApplication
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QPalette, QTextCursor
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QPalette
 from validators import Validator
 from utils.font.font_loader import get_mono_font
 
@@ -68,24 +68,3 @@ class NumberField(QFrame):
     def setPalette(self, palette: QPalette) -> None:
         self.text_edit.setPalette(palette)
 
-    def keyPressEvent(self, event) -> None:
-        if event.key() == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            clipboard = QApplication.clipboard()
-            if clipboard is not None:
-                clipboard.setText(self.get_raw_value())
-            event.accept()
-        elif event.key() == Qt.Key.Key_V and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            clipboard = QApplication.clipboard()
-            if clipboard is not None:
-                text = clipboard.text()
-                if text is not None:
-                    clean_text: str = text.replace(" ", "")
-                    self._ignore_signal = True
-                    self.text_edit.setPlainText(clean_text)
-                    self._ignore_signal = False
-                    if Validator.validate(clean_text, self.format_type):
-                        self._last_valid_text = clean_text
-                        self.changed.emit(clean_text, self)
-            event.accept()
-        else:
-            self.text_edit.keyPressEvent(event)

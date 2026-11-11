@@ -52,7 +52,7 @@
     - validate(text, fmt): проверяет строку на соответствие паттерну
     - Пустая строка всегда валидна
 
-1.5. highlighters.py
+1.5. widgets/highlighters.py
     - Класс ByteHighlighter (QSyntaxHighlighter)
     - Подсветка байтов разными цветами фона
     - Для двоичных форматов: шаг 8 символов (1 байт)
@@ -60,10 +60,8 @@
     - Подсветка с младшего байта (правый байт - первый цвет)
     - Виртуальные нули для выравнивания
     - 8 цветов, циклическое повторение
-
-1.6. styles.py
-    - STYLESHEET: CSS стили для QPlainTextEdit и QPushButton
-    - В current версии не подключен (опционально)
+    - compute_byte_ranges() - статический метод расчета диапазонов байтов
+      (тесты: tests/test_highlighter.py)
 
 ==================================================
 2. GUI ВИДЖЕТЫ (widgets/)
@@ -166,27 +164,15 @@
     - FUNCTION_NAMES: dict {function_code: название}
         * 1: Read Coils, 2: Read Discrete Inputs, 3: Read Holding Registers
         * 4: Read Input Registers, 5: Write Single Coil, 6: Write Single Register
-        * 15: Write Multiple Coils, 16: Write Multiple Registers и т.д.
+        * 7: Read Exception Status, 15: Write Multiple Coils,
+        * 16: Write Multiple Registers, 43: Read Device Identification и т.д.
     - EXCEPTION_CODES: dict {exception_code: описание}
-        * 1: ILLEGAL FUNCTION, 2: ILLEGAL DATA ADDRESS и т.д.
-    - REQUEST_STRUCTURE: dict {function_code: (min_len, max_len, description)}
-        * Для валидации длины PDU запроса
-    - RESPONSE_STRUCTURE: dict {function_code: (min_len, max_len, description)}
-        * Для валидации длины PDU ответа
-    - is_exception_response(): проверка бита 0x80
+        * 1: ILLEGAL FUNCTION ... 7: NEGATIVE ACKNOWLEDGE,
+        * 8: MEMORY PARITY ERROR, 10: GATEWAY PATH UNAVAILABLE,
+        * 11: GATEWAY TARGET FAILED TO RESPOND
     - get_original_function(): сброс бита 0x80
 
-3.2. widgets/modbus/validator.py
-    - Класс ModbusValidator
-    - validate_request_pdu(): проверка длины PDU по REQUEST_STRUCTURE
-    - validate_response_pdu(): проверка длины PDU по RESPONSE_STRUCTURE
-    - validate_exception_pdu(): проверка что exception PDU = 1 байт
-    - validate_tcp(): проверка TCP кадра
-        * Длина не менее 8 байт
-        * Поле Length = 1 + размер PDU
-        * Возвращает список ошибок
-
-3.3. widgets/modbus/parser_pdu.py
+3.2. widgets/modbus/parser_pdu.py
     - Класс PDUParser
     - parse_request(function_code, pdu):
         * Для каждого function_code проверяет длину PDU
@@ -198,7 +184,7 @@
         * Для функции 6/16: извлекает start_address и quantity
         * Для функции 1/2: извлекает byte_count и bits (побитово)
 
-3.4. widgets/modbus/parser_tcp.py
+3.3. widgets/modbus/parser_tcp.py
     - Класс TCPParser
     - parse(data, is_response):
         * Извлекает MBAP заголовок (7 байт)
@@ -207,7 +193,7 @@
         * Проверяет protocol_id == 0
         * Вызывает PDUParser.parse_request/response для PDU
 
-3.5. widgets/modbus/parser_rtu.py
+3.4. widgets/modbus/parser_rtu.py
     - Класс RTUParser
     - crc16(data): вычисление CRC-16 Modbus (полином 0xA001)
     - parse(data, is_response):
@@ -216,7 +202,7 @@
         * PDU = данные между function_code и CRC
         * Вызывает PDUParser.parse_request/response для PDU
 
-3.6. widgets/modbus/parser_ascii.py
+3.5. widgets/modbus/parser_ascii.py
     - Класс ASCIJParser
     - lrc(data): вычисление LRC (дополнение до 0)
     - parse(data, is_response):
@@ -227,7 +213,7 @@
         * PDU = данные между function_code и LRC
         * Вызывает PDUParser.parse_request/response для PDU
 
-3.7. widgets/modbus/modbus_parser.py
+3.6. widgets/modbus/modbus_parser.py
     - Класс ModbusParser (фасад)
     - parse(text, protocol, is_response):
         * Очищает строку от пробелов и переводов строк
@@ -239,12 +225,19 @@
         * Если include_crc=False → CRC не проверяется, в результате нет полей CRC
         * structure_valid = True если структура PDU соответствует спецификации
 
+3.7. widgets/modbus/display_groups.py
+    - Класс DisplayGroups: формирует группы байтов для отображения в Raw Data (HEX)
+    - build(result, is_tcp, is_response): обрамление кадра по протоколу
+      (ASCII: 3A/Slave/FC/PDU/LRC/0D0A; TCP: заголовок MBAP;
+       RTU: Slave ID/CRC16) + общие группы PDU
+    - Используется в ModbusWidget (widgets/modbus_widget.py)
+
 ==================================================
 4. ТЕСТЫ (tests/)
 ==================================================
 
 4.1. tests/test_modbus_parser.py
-    - Класс TestModbusParser: 60+ юнит-тестов
+    - Класс TestModbusParser: юнит-тесты Modbus парсера
     - Тесты из примеров ipc2u.ru для TCP и RTU
     - Тесты для ASCII протокола
     - Тесты исключений (exception responses)
@@ -252,7 +245,15 @@
     - Тесты валидации CRC/LRC
     - Класс TestModbusIntegration: сквозные тесты пар запрос-ответ
 
-4.2. tests/__init__.py
+4.2. tests/test_config_manager.py
+    - Тесты ConfigManager: регрессия, что load()
+      не мутирует default_config (во временном каталоге)
+
+4.3. tests/test_highlighter.py
+    - Тесты ByteHighlighter.compute_byte_ranges():
+      диапазоны байтов (полный/неполный байт, знак, HEX)
+
+4.4. tests/__init__.py
     - Экспорт TestModbusParser
 
 ==================================================
@@ -263,18 +264,25 @@
     - Запуск unittest.discover() для всех тестов в папке tests/
     - Вывод результатов в консоль
 
-5.2. debug_parser.py
+5.2. tools/debug_parser.py
     - Отладочный скрипт для проверки Modbus парсера
     - Вывод результатов парсинга для RTU, ASCII, TCP
 
-5.3. debug_crc.py
+5.3. tools/debug_crc.py
     - Отладочный скрипт для вычисления CRC16
 
-5.4. tree_script.py
+5.4. tools/tree_script.py
     - Вывод структуры проекта в консоль
 
-5.5. NumConverter.spec
+5.5. ConvMod.spec
     - Файл конфигурации PyInstaller для сборки EXE
+    - Включает папки widgets/, utils/font/hack/ и корневые модули
+
+5.6. utils/font/font_loader.py
+    - FONT_PATH - путь к папке hack/ (dev - рядом с файлом,
+      EXE - через sys._MEIPASS)
+    - load_hack_font() - регистрация Hack-Regular.ttf в QFontDatabase
+    - get_mono_font(size) - шрифт Hack или запасной Courier New
 
 ==================================================
 6. ОСОБЕННОСТИ РЕАЛИЗАЦИИ

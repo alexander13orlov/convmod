@@ -28,26 +28,24 @@
 2. СТРУКТУРА ПРОЕКТА
 ==================================================
 
-numConverter/
+convmod/
 │
 ├── main.py                     # Точка входа, инициализация QApplication
 ├── config_manager.py           # Загрузка/сохранение settings.yaml
 ├── converters.py               # Класс Converter: преобразование чисел
 ├── validators.py               # Класс Validator: валидация ввода по regex
-├── highlighters.py             # Класс ByteHighlighter: подсветка байтов
-├── styles.py                   # CSS стили для виджетов (опционально)
 ├── settings.yaml               # Файл настроек (создается автоматически)
 ├── modbus_commands.log         # Лог Modbus команд (создается автоматически)
 │
 ├── run_tests.py                # Запуск всех тестов
-├── debug_parser.py             # Отладочный скрипт для Modbus парсера
-├── debug_crc.py                # Отладочный скрипт для CRC16
-├── NumConverter.spec           # PyInstaller spec файл
+├── ConvMod.spec                # PyInstaller spec файл
 ├── requirements.txt            # Зависимости: PyQt6, PyYAML
 │
 ├── tests/
 │   ├── __init__.py
-│   └── test_modbus_parser.py   # Юнит-тесты Modbus парсера (60+ тестов)
+│   ├── test_modbus_parser.py   # Юнит-тесты Modbus парсера
+│   ├── test_config_manager.py  # Юнит-тесты ConfigManager
+│   └── test_highlighter.py     # Юнит-тесты ByteHighlighter
 │
 ├── widgets/                    # GUI компоненты
 │   ├── __init__.py
@@ -59,20 +57,31 @@ numConverter/
 │   ├── help_widget.py          # Виджет справки (HTML, кликабельные ссылки)
 │   ├── settings_widget.py      # Виджет настроек (выбор видимых форматов)
 │   ├── main_window.py          # Главное окно с QTabWidget
+│   ├── highlighters.py         # Класс ByteHighlighter: подсветка байтов
 │   │
 │   └── modbus/                 # Модули парсинга Modbus
 │       ├── __init__.py
-│       ├── constants.py        # Константы: FUNCTION_NAMES, EXCEPTION_CODES,
-│       │                       # REQUEST_STRUCTURE, RESPONSE_STRUCTURE
+│       ├── constants.py        # Константы: FUNCTION_NAMES, EXCEPTION_CODES
 │       ├── modbus_parser.py    # Фасадный класс ModbusParser
 │       ├── parser_pdu.py       # Парсер PDU (общий для всех протоколов)
 │       ├── parser_tcp.py       # Парсер TCP кадров (MBAP + PDU)
 │       ├── parser_rtu.py       # Парсер RTU кадров (SlaveID + PDU + CRC)
 │       ├── parser_ascii.py     # Парсер ASCII кадров (':' + hex + LRC + CRLF)
-│       └── validator.py        # Валидатор структуры кадров
+│       └── display_groups.py   # Отображение Raw Data (общее для протоколов)
 │
-└── old/                        # Старые версии (не используются)
-└── output/                     # Скомпилированные EXE файлы
+├── utils/
+│   └── font/
+│       ├── font_loader.py      # Загрузка шрифта (из исходников и из EXE)
+│       └── hack/               # Шрифт Hack (4 .ttf)
+│
+├── tools/                      # Отладочные скрипты (не используются приложением)
+│   ├── debug_crc.py
+│   ├── debug_parser.py
+│   └── tree_script.py
+│
+├── screenshots/                # Скриншоты приложения
+├── old/                        # Старые версии (не используются, gitignore)
+└── output/                     # Скомпилированные EXE файлы (gitignore)
 
 ==================================================
 3. ЛОГИКА ВЗАИМОДЕЙСТВИЯ МОДУЛЕЙ
@@ -182,26 +191,28 @@ numConverter/
     - Сохранение/очистка лога
 
 ==================================================
-5. ЛИШНИЕ/НЕИСПОЛЬЗУЕМЫЕ МОДУЛИ
+5. МЕРТВЫЙ КОД / УДАЛЕННЫЕ МОДУЛИ
 ==================================================
 
-5.1. МОЖНО УДАЛИТЬ (не используются в текущей версии):
-    - debug_crc.py (отладочный скрипт)
-    - debug_parser.py (отладочный скрипт)
-    - styles.py (стили не подключены в main_window.py)
-    - old/ (целиком, старые версии)
-    - output/ (скомпилированные EXE, не нужны в исходниках)
+5.1. УДАЛЕНО В РЕФАКТОРИНГЕ:
+    - styles.py (стили задавались непосредственно в main_window.py)
+    - modbus/validator.py (валидация перенесена в парсеры:
+      длина PDU — parser_pdu.py, CRC16 — parser_rtu.py, LRC — parser_ascii.py)
 
-5.2. НО НЕ УДАЛЯТЬ (используются):
-    - tree_script.py (утилита для вывода структуры)
+5.2. ОТЛАДОЧНЫЕ СКРИПТЫ ПЕРЕНЕСЕНЫ В tools/ (не используются приложением):
+    - tools/debug_crc.py
+    - tools/debug_parser.py
+    - tools/tree_script.py
+
+5.3. СОХРАНЕНО:
     - run_tests.py (запуск тестов)
-    - NumConverter.spec (для PyInstaller)
+    - ConvMod.spec (для PyInstaller)
     - requirements.txt (зависимости)
 
-5.3. ФАЙЛЫ КОТОРЫЕ СОЗДАЮТСЯ ПРИ РАБОТЕ:
+5.4. ФАЙЛЫ КОТОРЫЕ СОЗДАЮТСЯ ПРИ РАБОТЕ:
     - settings.yaml
     - modbus_commands.log
-    - __pycache__/ (игнорировать)
+    - __pycache__/ (gitignore)
 
 ==================================================
 6. ЗАВИСИМОСТИ (requirements.txt)
@@ -214,7 +225,7 @@ PyYAML==6.0.2
 7. СБОРКА EXE (PyInstaller)
 ==================================================
 
-pyinstaller --onefile --windowed --name="NumConverter" --add-data "widgets;widgets" --add-data "config_manager.py;." --add-data "converters.py;." --add-data "highlighters.py;." --add-data "validators.py;." --hidden-import=yaml main.py
+pyinstaller ConvMod.spec
 
 ==================================================
 8. ПРИМЕЧАНИЯ ПО ЛОГИКЕ

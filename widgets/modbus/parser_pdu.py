@@ -1,8 +1,24 @@
 # widgets/modbus/parser_pdu.py
 # Python 3.11+, PyQt6
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from widgets.modbus.constants import FUNCTION_NAMES, EXCEPTION_CODES, get_original_function
+
+
+def merge_pdu_result(result: Dict[str, Any], pdu_result: Dict[str, Any]) -> None:
+    """Объединяет результат разбора PDU с result.
+
+    errors и warnings дописываются к существующим спискам (чтобы
+    протокольные ошибки, например CRC mismatch, не терялись),
+    остальные поля записываются как есть.
+    """
+    for key, value in pdu_result.items():
+        if key == "errors":
+            result.setdefault("errors", []).extend(value)
+        elif key == "warnings":
+            result.setdefault("warnings", []).extend(value)
+        else:
+            result[key] = value
 
 
 class PDUParser:
@@ -36,7 +52,7 @@ class PDUParser:
             result["function_name"] = "INVALID"
             return result
         
-        if function_code == 3:  # Read Holding Registers
+        if function_code in (3, 4):  # Read Holding Registers / Read Input Registers
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
@@ -47,20 +63,8 @@ class PDUParser:
                 if result["quantity"] > 125:
                     result["warnings"].append(f"Quantity {result['quantity']} exceeds typical maximum (125 registers)")
             else:
-                result["errors"].append(f"Invalid PDU length for function 03: expected 4 bytes, got {len(pdu)}")
-        
-        elif function_code == 4:  # Read Input Registers
-            if len(pdu) == 4:
-                result["start_address"] = (pdu[0] << 8) | pdu[1]
-                result["quantity"] = (pdu[2] << 8) | pdu[3]
-                result["start_address_desc"] = cls.FIELD_DESCRIPTIONS["start_address"]
-                result["quantity_desc"] = cls.FIELD_DESCRIPTIONS["quantity"]
-                if result["quantity"] == 0:
-                    result["warnings"].append("Quantity is 0 - no registers to read")
-                if result["quantity"] > 125:
-                    result["warnings"].append(f"Quantity {result['quantity']} exceeds typical maximum (125 registers)")
-            else:
-                result["errors"].append(f"Invalid PDU length for function 04: expected 4 bytes, got {len(pdu)}")
+                result["errors"].append(f"Invalid PDU length for function {function_code:02X}: expected 4 bytes, got {len(pdu)}")
+
                 
         elif function_code == 6:  # Write Single Register
             if len(pdu) == 4:
@@ -169,6 +173,8 @@ class PDUParser:
                 result["byte_count"] = pdu[0]
                 result["byte_count_desc"] = cls.FIELD_DESCRIPTIONS["byte_count"]
                 expected = result["byte_count"]
+                if expected > 250:
+                    result["warnings"].append(f"Byte count {expected} exceeds typical maximum (250 bytes = 125 registers)")
                 if len(pdu) == 1 + expected:
                     result["data_bytes"] = pdu[1:1+expected]
                     result["registers"] = []
@@ -184,23 +190,23 @@ class PDUParser:
             else:
                 result["errors"].append(f"Response too short for function {function_code:02X}: need at least 1 byte, got {len(pdu)}")
                 
-        elif function_code == 6:
+        elif function_code in (5, 6):
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["value"] = (pdu[2] << 8) | pdu[3]
                 result["start_address_desc"] = cls.FIELD_DESCRIPTIONS["start_address"]
                 result["value_desc"] = cls.FIELD_DESCRIPTIONS["value"]
             else:
-                result["errors"].append(f"Invalid response length for function 06: expected 4 bytes, got {len(pdu)}")
+                result["errors"].append(f"Invalid response length for function {function_code:02X}: expected 4 bytes, got {len(pdu)}")
                 
-        elif function_code == 16:
+        elif function_code in (15, 16):
             if len(pdu) == 4:
                 result["start_address"] = (pdu[0] << 8) | pdu[1]
                 result["quantity"] = (pdu[2] << 8) | pdu[3]
                 result["start_address_desc"] = cls.FIELD_DESCRIPTIONS["start_address"]
                 result["quantity_desc"] = cls.FIELD_DESCRIPTIONS["quantity"]
             else:
-                result["errors"].append(f"Invalid response length for function 16: expected 4 bytes, got {len(pdu)}")
+                result["errors"].append(f"Invalid response length for function {function_code:02X}: expected 4 bytes, got {len(pdu)}")
                 
         elif function_code == 1 or function_code == 2:
             if len(pdu) >= 1:
@@ -219,288 +225,10 @@ class PDUParser:
                     result["errors"].append(f"Invalid response length for function {function_code:02X}: expected 1 + {expected} bytes, got {len(pdu)}")
             else:
                 result["errors"].append(f"Response too short for function {function_code:02X}: need at least 1 byte, got {len(pdu)}")
-                
-        elif function_code == 5:
-            if len(pdu) == 4:
-                result["start_address"] = (pdu[0] << 8) | pdu[1]
-                result["value"] = (pdu[2] << 8) | pdu[3]
-                result["start_address_desc"] = cls.FIELD_DESCRIPTIONS["start_address"]
-                result["value_desc"] = cls.FIELD_DESCRIPTIONS["value"]
-            else:
-                result["errors"].append(f"Invalid response length for function 05: expected 4 bytes, got {len(pdu)}")
-                
-        elif function_code == 15:
-            if len(pdu) == 4:
-                result["start_address"] = (pdu[0] << 8) | pdu[1]
-                result["quantity"] = (pdu[2] << 8) | pdu[3]
-                result["start_address_desc"] = cls.FIELD_DESCRIPTIONS["start_address"]
-                result["quantity_desc"] = cls.FIELD_DESCRIPTIONS["quantity"]
-            else:
-                result["errors"].append(f"Invalid response length for function 15: expected 4 bytes, got {len(pdu)}")
+
+
                 
         else:
             result["errors"].append(f"Unsupported function code: 0x{function_code:02X}")
         
         return result
-
-
-    @classmethod
-    def get_display_groups(cls, result: Dict[str, Any], is_tcp: bool, is_response: bool) -> List[Dict[str, Any]]:
-        """
-        Возвращает список групп для отображения в Raw Data.
-        Каждая группа: {"label": str, "bytes": str, "color": str}
-        """
-        groups = []
-        func = result.get("function_code")
-        protocol = result.get("protocol", "")
-        
-        # ========== ASCII ==========
-        if protocol == "ASCII":
-            groups.append({"label": "Start", "bytes": "3A", "color": "header"})
-            
-            slave = result.get("slave_address")
-            if slave is not None:
-                groups.append({"label": "Slave ID", "bytes": f"{slave:02X}", "color": "unit"})
-            
-            if func is not None:
-                groups.append({"label": "Function Code", "bytes": f"{func:02X}", "color": "function"})
-            
-            # PDU часть
-            if is_response:
-                if func in [3, 4]:
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    registers = result.get("registers", [])
-                    for reg in registers:
-                        groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-                elif func == 6:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func == 16:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func in [1, 2]:
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    if result.get("bits"):
-                        bits_str = "".join([str(b) for b in result["bits"][:8]])
-                        groups.append({"label": "Bits", "bytes": bits_str, "color": "default"})
-                elif func == 5:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func == 15:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func is not None and (func & 0x80):
-                    if "exception_code" in result:
-                        groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-            else:
-                if func in [3, 4, 1, 2]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func in [6, 5]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func in [16, 15]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    registers = result.get("registers", [])
-                    for reg in registers:
-                        groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-                elif func is not None and (func & 0x80):
-                    if "exception_code" in result:
-                        groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-            
-            if "lrc_received" in result:
-                lrc_val = int(result["lrc_received"], 16)
-                groups.append({"label": "LRC", "bytes": f"{lrc_val:02X}", "color": "lrc"})
-            
-            groups.append({"label": "End", "bytes": "0D0A", "color": "default"})
-            
-            return groups
-        
-        # ========== TCP ==========
-        if is_tcp:
-            tid = result.get("transaction_id", 0)
-            groups.append({"label": "Transaction ID", "bytes": f"{tid:04X}", "color": "transaction"})
-            groups.append({"label": "Protocol ID", "bytes": "0000", "color": "protocol"})
-            length = result.get("length", 0)
-            groups.append({"label": "Length", "bytes": f"{length:04X}", "color": "length"})
-            unit = result.get("unit_id", 0)
-            groups.append({"label": "Unit ID", "bytes": f"{unit:02X}", "color": "unit"})
-        
-        # ========== Function Code ==========
-        if func is not None:
-            groups.append({"label": "Function Code", "bytes": f"{func:02X}", "color": "function"})
-        else:
-            return groups
-        
-        # ========== RTU ==========
-        if protocol == "RTU":
-            # 1. Slave Address (уже добавлен выше, но его нет, т.к. RTU отдельно)
-            slave = result.get("slave_address")
-            if slave is not None:
-                # Вставляем Slave Address перед Function Code
-                # Так как groups уже содержит Function Code, нужно переставить
-                # Проще собрать заново
-                groups = []
-                groups.append({"label": "Slave ID", "bytes": f"{slave:02X}", "color": "unit"})
-                if func is not None:
-                    groups.append({"label": "Function Code", "bytes": f"{func:02X}", "color": "function"})
-            else:
-                if func is not None:
-                    groups = [{"label": "Function Code", "bytes": f"{func:02X}", "color": "function"}]
-            
-            # PDU
-            if is_response:
-                if func in [3, 4]:
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    registers = result.get("registers", [])
-                    for reg in registers:
-                        groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-                elif func == 6:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func == 16:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func in [1, 2]:
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    if result.get("bits"):
-                        bits_str = "".join([str(b) for b in result["bits"][:8]])
-                        groups.append({"label": "Bits", "bytes": bits_str, "color": "default"})
-                elif func == 5:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func == 15:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func is not None and (func & 0x80):
-                    if "exception_code" in result:
-                        groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-            else:
-                if func in [3, 4, 1, 2]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                elif func in [6, 5]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    val = result.get("value", 0)
-                    groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-                elif func in [16, 15]:
-                    addr = result.get("start_address", 0)
-                    groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                    qty = result.get("quantity", 0)
-                    groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                    byte_count = result.get("byte_count", 0)
-                    groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                    registers = result.get("registers", [])
-                    for reg in registers:
-                        groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-                elif func is not None and (func & 0x80):
-                    if "exception_code" in result:
-                        groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-            
-            # CRC
-            if "crc_received" in result:
-                crc_val = int(result["crc_received"], 16)
-                groups.append({"label": "CRC", "bytes": f"{crc_val:04X}", "color": "crc"})
-            
-            return groups
-        
-        # ========== TCP PDU ==========
-        if is_response:
-            if func in [3, 4]:
-                byte_count = result.get("byte_count", 0)
-                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                registers = result.get("registers", [])
-                for reg in registers:
-                    groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-            elif func == 6:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                val = result.get("value", 0)
-                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-            elif func == 16:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                qty = result.get("quantity", 0)
-                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-            elif func in [1, 2]:
-                byte_count = result.get("byte_count", 0)
-                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                if result.get("bits"):
-                    bits_str = "".join([str(b) for b in result["bits"][:8]])
-                    groups.append({"label": "Bits", "bytes": bits_str, "color": "default"})
-            elif func == 5:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                val = result.get("value", 0)
-                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-            elif func == 15:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                qty = result.get("quantity", 0)
-                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-            elif func is not None and (func & 0x80):
-                if "exception_code" in result:
-                    groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-        else:
-            if func in [3, 4, 1, 2]:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                qty = result.get("quantity", 0)
-                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-            elif func in [6, 5]:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                val = result.get("value", 0)
-                groups.append({"label": "Value", "bytes": f"{val:04X}", "color": "register"})
-            elif func in [16, 15]:
-                addr = result.get("start_address", 0)
-                groups.append({"label": "Start Address", "bytes": f"{addr:04X}", "color": "address"})
-                qty = result.get("quantity", 0)
-                groups.append({"label": "Quantity", "bytes": f"{qty:04X}", "color": "quantity"})
-                byte_count = result.get("byte_count", 0)
-                groups.append({"label": "Byte Count", "bytes": f"{byte_count:02X}", "color": "byte_count"})
-                registers = result.get("registers", [])
-                for reg in registers:
-                    groups.append({"label": "Register", "bytes": f"{reg:04X}", "color": "register"})
-            elif func is not None and (func & 0x80):
-                if "exception_code" in result:
-                    groups.append({"label": "Exception Code", "bytes": f"{result['exception_code']:02X}", "color": "crc"})
-        
-        return groups
-
-
-
-
-

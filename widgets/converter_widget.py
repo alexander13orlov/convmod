@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtGui import QPalette, QColor, QFocusEvent
 from PyQt6.QtCore import Qt, QTimer, QEvent
 from converters import Converter
+from config_manager import DEFAULT_VISIBLE_FIELDS
 from widgets.base_field import NumberField
 from widgets.byte_field import ByteGroupField
 
@@ -16,6 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class ConverterWidget(QWidget):
+    # Форматы с подсветкой байтов (длинные поля, ByteGroupField)
+    GROUP_FORMATS = ("bin_direct", "bin_complement", "hex_direct", "hex_complement", "ieee_bin", "ieee_hex")
+
     def __init__(self, parent: Optional[QWidget] = None, status_callback: Optional[Callable[[], None]] = None, focus_callback: Optional[Callable[[], None]] = None) -> None:
         super().__init__(parent)
         self.fields: Dict[str, NumberField] = {}
@@ -26,17 +30,7 @@ class ConverterWidget(QWidget):
         self.status_callback = status_callback
         self.focus_callback = focus_callback
         self.parent_window: Optional[Any] = parent
-        self.visible_fields: Dict[str, bool] = {
-            "decimal": True,
-            "hex_direct": True,
-            "bin_direct": True,
-            "bin_complement": False,
-            "hex_complement": False,
-            "ieee_bin": False,
-            "ieee_hex": False,
-            "unicode_char": False,
-            "utf8_char": False,
-        }
+        self.visible_fields: Dict[str, bool] = dict(DEFAULT_VISIBLE_FIELDS)
         self._setup_ui()
     
     def _setup_ui(self) -> None:
@@ -89,8 +83,8 @@ class ConverterWidget(QWidget):
             if not self.visible_fields.get(ftype, False):
                 continue
             visible_count += 1
-            is_long: bool = ftype in ["bin_direct", "bin_complement", "hex_direct", "hex_complement", "ieee_bin", "ieee_hex"]
-            if ftype in ["hex_direct", "hex_complement", "ieee_hex", "bin_direct", "bin_complement", "ieee_bin"]:
+            is_long: bool = ftype in self.GROUP_FORMATS
+            if is_long:
                 field: NumberField = ByteGroupField(label, ftype, is_long)
             else:
                 field = NumberField(label, ftype, is_long)
@@ -151,15 +145,20 @@ class ConverterWidget(QWidget):
         self._build_fields()
     
     def _get_nb_for_conversion(self, target_fmt: str) -> int:
-        if target_fmt in ['ieee_bin', 'ieee_hex']:
+        if target_fmt in ('ieee_bin', 'ieee_hex'):
             return 4  # 4 байта = 32 бита (single precision)
-        elif target_fmt in ['bin_complement', 'hex_complement']:
-            return 0
-        elif target_fmt in ['bin_direct', 'hex_direct']:
-            return 0
-        else:
-            return 8
+        if target_fmt in ('bin_complement', 'hex_complement', 'bin_direct', 'hex_direct'):
+            return 0  # ширина в байтах для этих форматов не используется
+        return 8
     
+    def _set_nb_from_chars(self, value_str: str, chars_per_byte: int) -> None:
+        """nb по количеству символов: целые байты с округлением вверх."""
+        clean: str = value_str.replace(" ", "")
+        if clean:
+            self.nb_display.setText(str(max(1, math.ceil(len(clean) / chars_per_byte))))
+        else:
+            self.nb_display.setText("0")
+
     def _update_nb_display(self, value_str: str, format_type: str) -> None:
         try:
             if not value_str or value_str.strip() == "":
@@ -185,22 +184,10 @@ class ConverterWidget(QWidget):
                     self.nb_display.setText(str(max(1, rounded_bytes)))
                     
             elif format_type in ["bin_direct", "bin_complement", "ieee_bin"]:
-                clean: str = value_str.replace(" ", "")
-                if clean:
-                    bytes_count: float = len(clean) / 8
-                    rounded_bytes: int = math.ceil(bytes_count)
-                    self.nb_display.setText(str(rounded_bytes) if rounded_bytes > 0 else "0")
-                else:
-                    self.nb_display.setText("0")
-                    
+                self._set_nb_from_chars(value_str, 8)
+
             elif format_type in ["hex_direct", "hex_complement", "ieee_hex"]:
-                clean = value_str.replace(" ", "")
-                if clean:
-                    bytes_count: float = len(clean) / 2
-                    rounded_bytes: int = math.ceil(bytes_count)
-                    self.nb_display.setText(str(rounded_bytes) if rounded_bytes > 0 else "0")
-                else:
-                    self.nb_display.setText("0")
+                self._set_nb_from_chars(value_str, 2)
                     
             elif format_type in ["unicode_char", "utf8_char"]:
                 if value_str:

@@ -55,15 +55,11 @@ python main.py
 
 ## Сборка EXE
 
-**bash**
-
 ```
-pyinstaller --onefile --windowed --name="ConvMod" --icon="favicon.ico" --add-data "widgets;widgets" --add-data "config_manager.py;." --add-data "converters.py;." --add-data "highlighters.py;." --add-data "validators.py;." --add-data "favicon.ico;." main.py
+pyinstaller ConvMod.spec
 ```
 
 ## Структура проекта
-
-**text**
 
 ```
 convmod/
@@ -71,22 +67,30 @@ convmod/
 ├── config_manager.py       # Загрузка/сохранение настроек
 ├── converters.py           # Преобразование чисел
 ├── validators.py           # Валидация ввода
-├── highlighters.py         # Подсветка байтов
 ├── widgets/                # GUI компоненты
+│   ├── base_field.py       # Базовое поле NumberField
+│   ├── byte_field.py       # ByteGroupField (подсветка байтов)
 │   ├── converter_widget.py
-│   ├── modbus_widget.py
-│   ├── main_window.py
+│   ├── highlighters.py     # Подсветка байтов
+│   ├── log_widget.py       # Лог команд
+│   ├── main_window.py      # Главное окно (вкладки)
+│   ├── modbus_widget.py    # Виджет Modbus анализатора
+│   ├── settings_widget.py  # Настройка видимых форматов
+│   ├── help_widget.py      # Справка
 │   └── modbus/             # Парсеры Modbus
-│       ├── parser_tcp.py
-│       ├── parser_rtu.py
-│       ├── parser_ascii.py
-│       └── parser_pdu.py
+│       ├── constants.py    # Коды функций/исключений
+│       ├── modbus_parser.py# Фасад (выбор парсера по протоколу)
+│       ├── parser_pdu.py   # Общий разбор PDU
+│       ├── parser_tcp.py   # MBAP + PDU
+│       ├── parser_rtu.py   # SlaveID + PDU + CRC16
+│       ├── parser_ascii.py # ':' + hex + LRC + CRLF
+│       └── display_groups.py
+├── utils/font/             # Шрифт Hack + загрузчик (font_loader.py)
+├── tools/                  # Отладочные скрипты
 └── tests/                  # Юнит-тесты
 ```
 
 ## Тестирование
-
-**bash**
 
 ```
 python run_tests.py
@@ -97,4 +101,4 @@ python run_tests.py
 MIT
 
 *Код написан с помощью deepseek
-** Работа  анализатора ASCII не проверялась
+** ASCII проверен: юнит-тесты + проверка LRC по эталонным кадрам

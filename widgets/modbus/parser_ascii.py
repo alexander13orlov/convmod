@@ -4,7 +4,7 @@
 from typing import Dict, Any
 import re
 from widgets.modbus.constants import FUNCTION_NAMES, EXCEPTION_CODES, get_original_function
-from widgets.modbus.parser_pdu import PDUParser
+from widgets.modbus.parser_pdu import PDUParser, merge_pdu_result
 
 
 class ASCIJParser:
@@ -22,43 +22,31 @@ class ASCIJParser:
         # Убираем пробелы и дефисы
         ascii_str = text.replace(' ', '').replace('-', '')
         
-        # Проверка стартового символа: ':' или '3A'
+        # Стартовый символ: ':' или в hex-форме '3A'
         if ascii_str.startswith(':'):
             payload = ascii_str[1:]
-            result["raw_hex_full"] = "3A" + ascii_str[1:]  # Сохраняем полный HEX для отображения
-        elif ascii_str.startswith('3A'):
+        elif ascii_str.upper().startswith('3A'):
             payload = ascii_str[2:]
-            if payload.startswith(':'):
-                payload = payload[1:]
-            result["raw_hex_full"] = ascii_str
+        elif ':' in ascii_str:
+            payload = ascii_str[ascii_str.index(':') + 1:]
         else:
-            if ':' in ascii_str:
-                payload = ascii_str[ascii_str.index(':') + 1:]
-                result["raw_hex_full"] = "3A" + payload
-            else:
-                result["errors"].append("Missing start ':'")
-                return result
+            result["errors"].append("Missing start ':'")
+            return result
         
-        # Проверка завершающих символов
-        if payload.endswith('\r\n'):
-            payload = payload[:-2]
-            if not result.get("raw_hex_full"):
-                result["raw_hex_full"] = "3A" + payload + "0D0A"
-            else:
-                result["raw_hex_full"] = result["raw_hex_full"].replace('\r\n', '') + "0D0A"
-        elif payload.endswith('\n'):
-            payload = payload[:-1]
-        elif payload.endswith('0D0A'):
-            payload = payload[:-4]
-            if not result.get("raw_hex_full"):
-                result["raw_hex_full"] = "3A" + payload + "0D0A"
-            else:
-                result["raw_hex_full"] = result["raw_hex_full"].replace('0D0A', '') + "0D0A"
-        elif payload.endswith('0d0a'):
-            payload = payload[:-4]
+        # Завершитель: CR LF в любом виде (реальные символы или hex 0D0A)
+        has_terminator = False
+        for suffix in ('\r\n', '0D0A', '0d0a', '\n', '\r'):
+            if payload.endswith(suffix):
+                payload = payload[:-len(suffix)]
+                has_terminator = True
+                break
+        if not has_terminator:
+            result["errors"].append("Missing CRLF terminator")
         
         # Убираем все не-HEX символы
         payload = re.sub(r'[^0-9A-Fa-f]', '', payload)
+        # Полный HEX для отображения (с завершителем, если он был)
+        result["raw_hex_full"] = "3A" + payload + ("0D0A" if has_terminator else "")
         
         if len(payload) < 4:
             result["errors"].append("Payload too short")
@@ -100,11 +88,7 @@ class ASCIJParser:
         else:
             pdu_result = PDUParser.parse_request(function_code, pdu)
         
-        result.update(pdu_result)
-        
-        # Формируем raw_hex для отображения
-        if not result.get("raw_hex_full"):
-            result["raw_hex_full"] = payload
+        merge_pdu_result(result, pdu_result)
         
         if result.get("errors"):
             result["valid"] = False

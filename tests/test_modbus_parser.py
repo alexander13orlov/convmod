@@ -425,6 +425,36 @@ class TestModbusParser(unittest.TestCase):
         result = self.parser.parse(":0103GFA00002FA\r\n", "ASCII", False)
         self.assertFalse(result.get("valid"))
     
+    # ==================== РЕГРЕССИОННЫЕ ТЕСТЫ (баги из ревью) ====================
+
+    def test_rtu_crc_mismatch_reported_in_errors(self):
+        # Корректный кадр 1103006B00037687 с испорченным байтом CRC
+        result = self.parser.parse("1103006B00037688", "RTU", False)
+        self.assertFalse(result.get("valid"))
+        self.assertIn("CRC mismatch", " ".join(result.get("errors", [])))
+
+    def test_rtu_with_options_crc_mismatch_reported_once(self):
+        result = self.parser.parse_rtu_with_options("1103006B00037688", False, True, True)
+        self.assertFalse(result.get("crc_valid"))
+        self.assertEqual(result.get("errors").count("CRC mismatch"), 1)
+
+    def test_rtu_with_options_pdu_error_not_duplicated(self):
+        # func 03: PDU из 2 байтов вместо 4
+        result = self.parser.parse_rtu_with_options("01030FA0", False, True, False)
+        self.assertFalse(result.get("valid"))
+        pdu_errors = [e for e in result.get("errors", []) if e.startswith("Invalid PDU length")]
+        self.assertEqual(len(pdu_errors), 1)
+
+    def test_ascii_lrc_mismatch_reported_in_errors(self):
+        result = self.parser.parse(":01030FA00002FF\r\n", "ASCII", False)
+        self.assertFalse(result.get("valid"))
+        self.assertIn("LRC mismatch", " ".join(result.get("errors", [])))
+
+    def test_ascii_terminator_in_hex_form(self):
+        result = self.parser.parse("3A01030FA000024B0D0A", "ASCII", False)
+        self.assertTrue(result.get("valid"))
+        self.assertEqual(result.get("start_address"), 0x0FA0)
+
     # ==================== EDGE CASES ====================
     
     def test_empty_input(self):

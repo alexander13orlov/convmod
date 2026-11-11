@@ -2,7 +2,7 @@
 # Python 3.11+, PyQt6
 
 from typing import Dict, Any
-from widgets.modbus.parser_pdu import PDUParser
+from widgets.modbus.parser_pdu import PDUParser, merge_pdu_result
 
 
 class TCPParser:
@@ -44,10 +44,6 @@ class TCPParser:
             result["structure_valid"] = False
             return result
 
-        if len(data) <= 7:
-            result["structure_valid"] = False
-            return result
-
         function_code = data[7]
         pdu = data[8:] if len(data) > 8 else b''
         
@@ -56,17 +52,8 @@ class TCPParser:
         else:
             pdu_result = PDUParser.parse_request(function_code, pdu)
         
-        # Сохраняем существующие предупреждения перед обновлением
-        existing_warnings = result.get("warnings", []).copy()
-        
-        # Обновляем результат
-        result.update(pdu_result)
-        
-        # Восстанавливаем предупреждения из TCP-заголовка
-        if existing_warnings:
-            if "warnings" not in result:
-                result["warnings"] = []
-            result["warnings"].extend(existing_warnings)
+        # Обновляем результат (errors и warnings объединяются, а не заменяются)
+        merge_pdu_result(result, pdu_result)
         
         if result.get("errors"):
             result["valid"] = False

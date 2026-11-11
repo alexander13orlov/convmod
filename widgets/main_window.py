@@ -40,6 +40,10 @@ class MainWindow(QMainWindow):
                 decimal_field.text_edit.setTextCursor(cursor)
     
     def _initial_resize(self) -> None:
+        # После построения полей (через QTimer) подгоняем окно под поля
+        self._fit_converter()
+
+    def _fit_converter(self) -> None:
         if self.converter_widget.fields:
             visible_count = sum(1 for v in self.converter_widget.visible_fields.values() if v)
             first_field = next(iter(self.converter_widget.fields.values()))
@@ -93,12 +97,7 @@ class MainWindow(QMainWindow):
                     pass
                 self._modbus_signals_connected = False
             self._update_status_info()
-            if self.converter_widget.fields:
-                visible_count = sum(1 for v in self.converter_widget.visible_fields.values() if v)
-                first_field = next(iter(self.converter_widget.fields.values()))
-                if first_field is not None:
-                    field_height = first_field.minimumSizeHint().height()
-                    self.resize_to_fit(visible_count, field_height)
+            self._fit_converter()
     
     def _update_status_from_modbus(self) -> None:
         """Обновление статусной строки для Modbus вкладки"""
@@ -127,8 +126,7 @@ class MainWindow(QMainWindow):
         self._update_status_info()
     
     def save_config(self) -> None:
-        if hasattr(self, 'modbus_widget') and self.modbus_widget is not None:
-            self.config["modbus"] = self.modbus_widget.get_config()
+        self.config["modbus"] = self.modbus_widget.get_config()
         self.config_manager.save(self.config)
     
     def _setup_status_bar(self) -> None:
