@@ -6,7 +6,7 @@ import math
 import logging
 from typing import Optional, Dict, Any, Callable
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtGui import QPalette, QColor, QFocusEvent
+from PyQt6.QtGui import QPalette, QColor, QFocusEvent, QFontDatabase
 from PyQt6.QtCore import Qt, QTimer, QEvent
 from converters import Converter
 from config_manager import DEFAULT_VISIBLE_FIELDS
@@ -88,6 +88,9 @@ class ConverterWidget(QWidget):
                 field: NumberField = ByteGroupField(label, ftype, is_long)
             else:
                 field = NumberField(label, ftype, is_long)
+            if ftype == "unicode_char":
+                # Символ может быть вне покрытия Hack — стандартный системный шрифт
+                field.text_edit.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont))
             field.changed.connect(self._on_field_changed)
             field.text_edit.selectionChanged.connect(self._on_selection_or_focus)
             field.text_edit.textChanged.connect(self._on_selection_or_focus)

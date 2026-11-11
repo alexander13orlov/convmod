@@ -12,7 +12,6 @@ from widgets.help_widget import HelpWidget
 from widgets.modbus_widget import ModbusWidget
 from widgets.log_widget import LogWidget
 from config_manager import ConfigManager
-from utils.font.font_loader import warmup_font_fallback
 
 
 class MainWindow(QMainWindow):
@@ -25,9 +24,6 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.load()
         self._modbus_signals_connected = False
 
-        # Прогрев fallback-шрифтов: первый рендер символа вне Hack
-        # стоит ~0.7 c — платим при старте, а не при вводе
-        warmup_font_fallback()
         self._setup_ui()
         self._setup_status_bar()
         
