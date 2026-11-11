@@ -126,7 +126,8 @@ class MainWindow(QMainWindow):
         self._update_status_info()
     
     def save_config(self) -> None:
-        self.config["modbus"] = self.modbus_widget.get_config()
+        if hasattr(self, 'modbus_widget') and self.modbus_widget is not None:
+            self.config["modbus"] = self.modbus_widget.get_config()
         self.config_manager.save(self.config)
     
     def _setup_status_bar(self) -> None:

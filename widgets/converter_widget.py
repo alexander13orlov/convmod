@@ -116,13 +116,17 @@ class ConverterWidget(QWidget):
     
     def _set_focus_to_field(self, field: Optional[NumberField]) -> None:
         if field is not None:
-            field.text_edit.setFocus()
-            cursor = field.text_edit.textCursor()
-            cursor.movePosition(cursor.MoveOperation.End)
-            field.text_edit.setTextCursor(cursor)
-            if self.active_source != field:
-                self.active_source = field
-                self._update_source_highlight()
+            try:
+                field.text_edit.setFocus()
+                cursor = field.text_edit.textCursor()
+                cursor.movePosition(cursor.MoveOperation.End)
+                field.text_edit.setTextCursor(cursor)
+                if self.active_source != field:
+                    self.active_source = field
+                    self._update_source_highlight()
+            except RuntimeError:
+                # Поле уже удалено (пересборка) — таймер устарел, игнорируем
+                pass
     
     def eventFilter(self, obj, event) -> bool:
         if event.type() == QEvent.Type.FocusIn:
@@ -142,7 +146,8 @@ class ConverterWidget(QWidget):
     
     def update_visible_fields(self, visible: Dict[str, bool]) -> None:
         self.visible_fields = visible.copy()
-        self._build_fields()
+        if self.fields:
+            self._build_fields()
     
     def _get_nb_for_conversion(self, target_fmt: str) -> int:
         if target_fmt in ('ieee_bin', 'ieee_hex'):
