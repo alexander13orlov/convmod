@@ -2,6 +2,7 @@
 # Python 3.11+, PyQt6
 
 import logging
+import re
 from typing import Optional
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit
 from PyQt6.QtCore import pyqtSignal
@@ -14,6 +15,11 @@ logger = logging.getLogger(__name__)
 
 class NumberField(QFrame):
     changed = pyqtSignal(str, object)
+    layout_hint = pyqtSignal(str)
+
+    # Подсказка при отклонении кириллицы (русская раскладка клавиатуры)
+    LAYOUT_HINT = "Введена кириллица — переключите раскладку на английскую"
+    _CYRILLIC_RE = re.compile(r"[\u0400-\u04FF]")
 
     def __init__(self, label: str, format_type: str, is_long: bool = False, parent: Optional[QFrame] = None) -> None:
         super().__init__(parent)
@@ -73,6 +79,9 @@ class NumberField(QFrame):
             cursor.setPosition(min(pos, len(self._last_valid_text)))
             self.text_edit.setTextCursor(cursor)
             self._ignore_signal = False
+            # Новая часть (от первого расхождения до конца): если там кириллица — подсказка
+            if self._CYRILLIC_RE.search(raw_text[pos:]):
+                self.layout_hint.emit(self.LAYOUT_HINT)
 
     def set_value_silent(self, text: str) -> None:
         """Установка значения без генерации сигнала changed"""

@@ -144,7 +144,10 @@ class MainWindow(QMainWindow):
         self.status_info = QLabel("Готов")
         self.status_bar.addWidget(self.status_info)
     
-    def _update_status_info(self) -> None:
+    def _update_status_info(self, hint: Optional[str] = None) -> None:
+        if hint:
+            self.status_info.setText(hint)
+            return
         active = self.converter_widget.get_active_field()
         if active is not None:
             text = active.get_raw_value()

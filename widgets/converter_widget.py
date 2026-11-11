@@ -19,8 +19,10 @@ logger = logging.getLogger(__name__)
 class ConverterWidget(QWidget):
     # Форматы с подсветкой байтов (длинные поля, ByteGroupField)
     GROUP_FORMATS = ("bin_direct", "bin_complement", "hex_direct", "hex_complement", "ieee_bin", "ieee_hex")
+    # Сколько подсказка о раскладке показывается в статус-баре
+    HINT_TIMEOUT_MS = 4000
 
-    def __init__(self, parent: Optional[QWidget] = None, status_callback: Optional[Callable[[], None]] = None, focus_callback: Optional[Callable[[], None]] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, status_callback: Optional[Callable[[], None]] = None, focus_callback: Optional[Callable[[Optional[str]], None]] = None) -> None:
         super().__init__(parent)
         self.fields: Dict[str, NumberField] = {}
         self.active_source: Optional[NumberField] = None
@@ -31,6 +33,10 @@ class ConverterWidget(QWidget):
         self.focus_callback = focus_callback
         self.parent_window: Optional[Any] = parent
         self.visible_fields: Dict[str, bool] = dict(DEFAULT_VISIBLE_FIELDS)
+        self._hint: Optional[str] = None
+        self._hint_timer: QTimer = QTimer(self)
+        self._hint_timer.setSingleShot(True)
+        self._hint_timer.timeout.connect(self._clear_hint)
         self._setup_ui()
     
     def _setup_ui(self) -> None:
@@ -89,6 +95,8 @@ class ConverterWidget(QWidget):
             else:
                 field = NumberField(label, ftype, is_long)
             field.changed.connect(self._on_field_changed)
+            field.changed.connect(self._on_valid_edit)
+            field.layout_hint.connect(self._on_layout_hint)
             field.text_edit.selectionChanged.connect(self._on_selection_or_focus)
             field.text_edit.textChanged.connect(self._on_selection_or_focus)
             field.text_edit.installEventFilter(self)
@@ -136,13 +144,32 @@ class ConverterWidget(QWidget):
                         self.active_source = field
                         self._update_source_highlight()
                     if self.focus_callback:
-                        self.focus_callback()
+                        self.focus_callback(self._hint)
                     break
         return super().eventFilter(obj, event)
     
     def _on_selection_or_focus(self) -> None:
+        self._notify_status()
+
+    def _on_layout_hint(self, message: str) -> None:
+        self._hint = message
+        self._hint_timer.start(self.HINT_TIMEOUT_MS)
+        self._notify_status()
+
+    def _on_valid_edit(self, text: str, source: NumberField) -> None:
+        # Произошла валидная правка — подсказка о раскладке больше не нужна
+        self._clear_hint()
+
+    def _clear_hint(self) -> None:
+        if self._hint is None:
+            return
+        self._hint = None
+        self._hint_timer.stop()
+        self._notify_status()
+
+    def _notify_status(self) -> None:
         if self.focus_callback:
-            self.focus_callback()
+            self.focus_callback(self._hint)
     
     def update_visible_fields(self, visible: Dict[str, bool]) -> None:
         self.visible_fields = visible.copy()
@@ -279,6 +306,7 @@ class ConverterWidget(QWidget):
                 self.active_source = None
     
     def reset_fields(self) -> None:
+        self._clear_hint()
         for widget in self.fields.values():
             if widget is not None:
                 widget.set_value_silent("")
