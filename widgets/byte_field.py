@@ -5,7 +5,6 @@ from typing import Optional
 from PyQt6.QtCore import QTimer
 from widgets.base_field import NumberField
 from widgets.highlighters import ByteHighlighter
-from validators import Validator
 
 
 class ByteGroupField(NumberField):
@@ -27,16 +26,5 @@ class ByteGroupField(NumberField):
         doc = self.text_edit.document()
         if doc is not None and self.highlighter is None:
             self.highlighter = ByteHighlighter(doc, self.format_type)
-    
-    def _on_text_changed(self) -> None:
-        if self._ignore_signal:
-            return
-        raw_text: str = self.text_edit.toPlainText()
-        if Validator.validate(raw_text, self.format_type):
-            self._last_valid_text = raw_text
-            self.changed.emit(raw_text, self)
-        else:
-            self._ignore_signal = True
-            self.text_edit.setPlainText(self._last_valid_text)
-            self._ignore_signal = False
+
     
