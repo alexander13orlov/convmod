@@ -108,6 +108,8 @@ class ConverterWidget(QWidget):
             self.active_source = self.fields[active_format]
             if active_text is not None:
                 self.active_source.set_value_silent(active_text)
+                # Пересборка не должна терять значения: повторяем конвертацию из источника
+                self._convert_from_source(active_text, self.active_source)
             QTimer.singleShot(50, lambda: self._set_focus_to_field(self.active_source))
         else:
             decimal_field = self.fields.get("decimal")
@@ -240,12 +242,16 @@ class ConverterWidget(QWidget):
             logger.debug(f"[Converter] _on_field_changed: IGNORE (no focus), source={source.format_type}")
             return
         
-        self.updating = True
-        
         if self.active_source != source:
             logger.debug(f"[Converter] _on_field_changed: active source changed to {source.format_type}")
             self.active_source = source
             self._update_source_highlight()
+        
+        self._convert_from_source(text, source)
+
+    def _convert_from_source(self, text: str, source: NumberField) -> None:
+        """Конвертация значения источника во все остальные поля (без проверки фокуса)."""
+        self.updating = True
         
         self._update_nb_display(text, source.format_type)
         
