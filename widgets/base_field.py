@@ -36,22 +36,41 @@ class NumberField(QFrame):
         self.text_edit.textChanged.connect(self._on_text_changed)
         layout.addWidget(self.text_edit, stretch=1)
         
+    @staticmethod
+    def _common_prefix_len(a: str, b: str) -> int:
+        """Длина общего префикса: позиция, где новый текст расходится с валидным."""
+        n: int = min(len(a), len(b))
+        i: int = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
     def _on_text_changed(self) -> None:
         if self._ignore_signal:
             return
         raw_text: str = self.text_edit.toPlainText()
         
         if Validator.validate(raw_text, self.format_type):
+            # Для decimal запятая принимается как разделитель, но на экране — точка
+            if self.format_type == "decimal" and "," in raw_text:
+                normalized: str = raw_text.replace(",", ".")
+                cursor_pos = self.text_edit.textCursor().position()
+                self._ignore_signal = True
+                self.text_edit.setPlainText(normalized)
+                cursor = self.text_edit.textCursor()
+                cursor.setPosition(min(cursor_pos, len(normalized)))
+                self.text_edit.setTextCursor(cursor)
+                self._ignore_signal = False
+                raw_text = normalized
             self._last_valid_text = raw_text
             self.changed.emit(raw_text, self)
         else:
+            # Откат: курсор возвращается в точку, где вводилось недопустимое
+            pos = self._common_prefix_len(self._last_valid_text, raw_text)
             self._ignore_signal = True
-            cursor = self.text_edit.textCursor()
-            cursor_pos = cursor.position()
             self.text_edit.setPlainText(self._last_valid_text)
             cursor = self.text_edit.textCursor()
-            new_pos = min(cursor_pos, len(self._last_valid_text))
-            cursor.setPosition(new_pos)
+            cursor.setPosition(min(pos, len(self._last_valid_text)))
             self.text_edit.setTextCursor(cursor)
             self._ignore_signal = False
 

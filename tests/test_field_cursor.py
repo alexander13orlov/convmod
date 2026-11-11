@@ -58,6 +58,27 @@ class TestFieldCursorOnInvalidInput(unittest.TestCase):
         self.assertEqual(field.text_edit.toPlainText(), "1F")
         self.assertEqual(self._cursor_pos(field), 2)
 
+    def test_bin_direct_invalid_char_mid_text_cursor_stays_in_place(self) -> None:
+        # Курсор в СЕРЕДИНЕ текста: недопустимый символ не должен сдвигать его вправо
+        field = ByteGroupField("Двоичный прямой код:", "bin_direct", is_long=True)
+        field.set_value_silent("101")
+        cursor = field.text_edit.textCursor()
+        cursor.setPosition(1)  # между "1" и "0"
+        field.text_edit.setTextCursor(cursor)
+        field.text_edit.insertPlainText("2")  # '2' недопустим в двоичном
+        self.assertEqual(field.text_edit.toPlainText(), "101")
+        self.assertEqual(self._cursor_pos(field), 1)  # на месте, а не 2
+
+    def test_hex_direct_invalid_char_mid_text_cursor_stays_in_place(self) -> None:
+        field = ByteGroupField("HEX прямой код:", "hex_direct", is_long=True)
+        field.set_value_silent("1F2")
+        cursor = field.text_edit.textCursor()
+        cursor.setPosition(1)
+        field.text_edit.setTextCursor(cursor)
+        field.text_edit.insertPlainText("G")
+        self.assertEqual(field.text_edit.toPlainText(), "1F2")
+        self.assertEqual(self._cursor_pos(field), 1)
+
     def test_decimal_invalid_char_keeps_cursor_at_end(self) -> None:
         field = NumberField("Десятичный код:", "decimal")
         field.set_value_silent("123")
