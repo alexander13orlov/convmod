@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt, QTimer
 from widgets.converter_widget import ConverterWidget
 from widgets.settings_widget import SettingsWidget
 from widgets.help_widget import HelpWidget
+from widgets.about_widget import AboutWidget
 from widgets.modbus_widget import ModbusWidget
 from widgets.log_widget import LogWidget
 from config_manager import ConfigManager
@@ -72,11 +73,14 @@ class MainWindow(QMainWindow):
         
         self.help_widget = HelpWidget(self)
         
+        self.about_widget = AboutWidget(self)
+
         self.tab_widget.addTab(self.converter_widget, "Конвертер")
         self.tab_widget.addTab(self.settings_widget, "Настройка")
         self.tab_widget.addTab(self.modbus_widget, "Modbus")
         self.tab_widget.addTab(self.log_widget, "Лог")
         self.tab_widget.addTab(self.help_widget, "Справка")
+        self.tab_widget.addTab(self.about_widget, "О программе")
         
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
     
