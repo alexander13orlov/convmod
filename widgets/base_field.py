@@ -26,7 +26,7 @@ class NumberField(QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         
         self.label: QLabel = QLabel(label)
-        self.label.setFixedWidth(172)
+        self.label.setFixedWidth(155)
         self.label.setIndent(4)
         layout.addWidget(self.label)
         

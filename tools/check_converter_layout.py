@@ -1,7 +1,8 @@
 # tools/check_converter_layout.py
 # Проверка вкладки Конвертер: подпись смещена вправо (indent = 4 px),
-# левый край поля подтянут влево (фикс. ширина подписи 172 px вместо 180),
-# текст самой длинной подписи не обрезается.
+# левый край поля подтянут к подписям (фикс. ширина подписи 155 px),
+# текст самой длинной подписи не обрезается,
+# зазор от конца самой длинной подписи до левого края поля = 17 px.
 # Запуск: python tools\check_converter_layout.py -> ожидается "LAYOUT OK"
 import sys
 import os
@@ -13,8 +14,9 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QApplication
 from widgets.main_window import MainWindow
 
-LABEL_WIDTH = 172
+LABEL_WIDTH = 155
 LABEL_INDENT = 4
+GAP_EXPECTED = 17
 
 
 def main() -> None:
@@ -26,6 +28,8 @@ def main() -> None:
 
     cw = window.tab_widget.widget(0)
     problems: list[str] = []
+    longest_ftype = ""
+    longest_w = 0
     for ftype, field in cw.fields.items():
         width = field.label.width()
         indent = field.label.indent()
@@ -36,6 +40,13 @@ def main() -> None:
             problems.append(f"{ftype}: indent={indent} (ожидается {LABEL_INDENT})")
         if text_w + indent > LABEL_WIDTH:
             problems.append(f"{ftype}: текст {text_w} + indent {indent} не помещается в {LABEL_WIDTH}")
+        if text_w > longest_w:
+            longest_ftype, longest_w = ftype, text_w
+
+    longest = cw.fields[longest_ftype]
+    gap = longest.text_edit.pos().x() - (longest.label.pos().x() + longest.label.indent() + longest_w)
+    if gap != GAP_EXPECTED:
+        problems.append(f"{longest_ftype}: зазор до поля {gap} (ожидается {GAP_EXPECTED})")
 
     if problems:
         for p in problems:
