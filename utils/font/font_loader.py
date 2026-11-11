@@ -68,3 +68,32 @@ def get_mono_font(size: int = 10) -> QFont:
     # Шрифт по умолчанию
     logger.debug("Hack font not found, using Courier New")
     return QFont("Courier New", size)
+
+
+_fallback_warmed: bool = False
+
+
+def warmup_font_fallback() -> None:
+    """Одноразовый прогрев механизма fallback-шрифтов Qt/Windows.
+
+    Первая отрисовка глифа, которого нет в шрифте (например CJK-символ
+    в поле "UNICODE символ"), стоит ~0.7 c: система ищет резервный шрифт.
+    Рисуем такие символы в невидимый QPixmap при запуске, чтобы разовая
+    стоимость упала до первого ввода пользователя.
+    """
+    global _fallback_warmed
+    if _fallback_warmed:
+        return
+    _fallback_warmed = True
+    try:
+        from PyQt6.QtGui import QPixmap, QPainter
+        pm = QPixmap(64, 16)
+        pm.fill()
+        p = QPainter(pm)
+        p.setFont(get_mono_font(10))
+        # Символы вне покрытия Hack: CJK, хангыль, эмодзи
+        p.drawText(0, 12, "\u3039\uAC00\U0001F514")
+        p.end()
+    except Exception:
+        _fallback_warmed = False
+        logger.debug("Прогрев fallback-шрифтов не выполнен", exc_info=True)
