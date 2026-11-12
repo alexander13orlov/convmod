@@ -1,6 +1,7 @@
 # widgets/main_window.py (исправлен - обработка ошибки disconnect)
 # Python 3.11+, PyQt6
 
+import re
 from typing import Optional, Dict
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QStatusBar, QTabWidget, QLabel
@@ -106,6 +107,17 @@ class MainWindow(QMainWindow):
                 self._modbus_signals_connected = False
             self._update_status_info()
             self._fit_converter()
+        else:
+            # На «Настройке», «Логе», «Справке», «О программе» подсказка
+            # о байтах/символах не нужна
+            self.status_info.setText("Готов")
+    
+    @staticmethod
+    def _modbus_byte_count(text: str) -> int:
+        """Байты по HEX цифрам строки (как в парсере modbus): тире, пробелы
+        и прочие не-HEX символы не учитываются."""
+        hex_chars: str = re.sub(r'[^0-9A-Fa-f]', '', text)
+        return (len(hex_chars) + 1) // 2
     
     def _update_status_from_modbus(self) -> None:
         """Обновление статусной строки для Modbus вкладки"""
@@ -113,8 +125,9 @@ class MainWindow(QMainWindow):
         total_chars = len(text)
         selected_chars = len(self.modbus_widget.input_edit.selectedText())
         
-        clean_text = text.replace(' ', '').replace('\n', '').replace('\r', '')
-        byte_count = len(clean_text) // 2 if len(clean_text) % 2 == 0 else len(clean_text) // 2 + 1
+        # Байты — по HEX цифрам (как в парсере): тире, пробелы и прочие
+        # не-HEX символы не учитываются
+        byte_count = self._modbus_byte_count(text)
         
         self.status_info.setText(f"Байт: {byte_count} | Символов: {total_chars} | Выделено: {selected_chars}")
     

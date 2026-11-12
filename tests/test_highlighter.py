@@ -47,6 +47,34 @@ class TestByteHighlighterRanges(unittest.TestCase):
             [(0, 2, 0)]
         )
 
+    def test_hex_expression_operators_not_counted(self) -> None:
+        # FF+01: цифры на позициях 0,1,3,4 → 2 байта, «+» не подсвечивается
+        self.assertEqual(
+            ByteHighlighter.compute_byte_ranges("FF+01", 2, 8, ByteHighlighter.HEX_DIGITS),
+            [(0, 2, 1), (3, 2, 0)]
+        )
+
+    def test_bin_expression_operators_not_counted(self) -> None:
+        # 101+11: цифры 0-2 и 4-5 → 5 цифр = 1 байт, «+» не подсвечивается
+        self.assertEqual(
+            ByteHighlighter.compute_byte_ranges("101+11", 8, 8, ByteHighlighter.BIN_DIGITS),
+            [(0, 3, 0), (4, 2, 0)]
+        )
+
+    def test_expression_does_not_color_over_operator(self) -> None:
+        # F+F: 2 цифры = 1 байт, диапазон не перескакивает через «+»
+        self.assertEqual(
+            ByteHighlighter.compute_byte_ranges("F+F", 2, 8, ByteHighlighter.HEX_DIGITS),
+            [(0, 1, 0), (2, 1, 0)]
+        )
+
+    def test_spaces_not_counted(self) -> None:
+        # 08 08: пробел не цифра, байты как в «0808», но с разрывом
+        self.assertEqual(
+            ByteHighlighter.compute_byte_ranges("08 08", 2, 8, ByteHighlighter.HEX_DIGITS),
+            [(0, 2, 1), (3, 2, 0)]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

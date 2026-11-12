@@ -13,6 +13,7 @@ from converters import Converter
 from config_manager import DEFAULT_VISIBLE_FIELDS
 from widgets.base_field import NumberField
 from widgets.byte_field import ByteGroupField
+from widgets.highlighters import ByteHighlighter
 
 logger = logging.getLogger(__name__)
 
@@ -215,9 +216,10 @@ class ConverterWidget(QWidget):
             return 0  # ширина в байтах для этих форматов не используется
         return 8
     
-    def _set_nb_from_chars(self, value_str: str, chars_per_byte: int) -> None:
-        """nb по количеству символов: целые байты с округлением вверх."""
-        clean: str = value_str.replace(" ", "")
+    def _set_nb_from_chars(self, value_str: str, chars_per_byte: int, digits: str) -> None:
+        """nb по количеству цифр формата: знак, операторы и пробелы не
+        считаются, целые байты с округлением вверх."""
+        clean: str = "".join(ch for ch in value_str if ch in digits)
         if clean:
             self.nb_display.setText(str(max(1, math.ceil(len(clean) / chars_per_byte))))
         else:
@@ -230,6 +232,19 @@ class ConverterWidget(QWidget):
                 return
                 
             if format_type == "decimal":
+                if math_eval.is_expression(value_str):
+                    # Выражение: nbytes по значению результата
+                    value = math_eval.evaluate(value_str, "decimal")
+                    if value is None:
+                        self.nb_display.setText("0")
+                        return
+                    if isinstance(value, float):
+                        if -3.4e38 <= value <= 3.4e38:
+                            self.nb_display.setText("4")
+                        else:
+                            self.nb_display.setText("8")
+                        return
+                    value_str = str(value)
                 if '.' in value_str:
                     num = float(value_str)
                     if -3.4e38 <= num <= 3.4e38:
@@ -248,10 +263,10 @@ class ConverterWidget(QWidget):
                     self.nb_display.setText(str(max(1, rounded_bytes)))
                     
             elif format_type in ["bin_direct", "bin_complement", "ieee_bin"]:
-                self._set_nb_from_chars(value_str, 8)
+                self._set_nb_from_chars(value_str, 8, ByteHighlighter.BIN_DIGITS)
 
             elif format_type in ["hex_direct", "hex_complement", "ieee_hex"]:
-                self._set_nb_from_chars(value_str, 2)
+                self._set_nb_from_chars(value_str, 2, ByteHighlighter.HEX_DIGITS)
                     
             elif format_type in ["unicode_char", "utf8_char"]:
                 if value_str:
