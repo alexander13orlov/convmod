@@ -4,7 +4,7 @@
 import re
 from typing import Optional, Dict
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QStatusBar, QTabWidget, QLabel
+    QMainWindow, QWidget, QStatusBar, QTabWidget, QLabel, QStyle
 )
 from PyQt6.QtCore import Qt, QTimer
 from widgets.converter_widget import ConverterWidget
@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
         else:
             # На «Настройке», «Логе», «Справке», «О программе» подсказка
             # о байтах/символах не нужна
+            self.status_icon.hide()
             self.status_info.setText("Готов")
     
     @staticmethod
@@ -121,6 +122,7 @@ class MainWindow(QMainWindow):
     
     def _update_status_from_modbus(self) -> None:
         """Обновление статусной строки для Modbus вкладки"""
+        self.status_icon.hide()
         text = self.modbus_widget.input_edit.text()
         total_chars = len(text)
         selected_chars = len(self.modbus_widget.input_edit.selectedText())
@@ -158,13 +160,31 @@ class MainWindow(QMainWindow):
     def _setup_status_bar(self) -> None:
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self.status_icon = QLabel()
+        self.status_icon.hide()
+        self.status_bar.insertWidget(0, self.status_icon)
         self.status_info = QLabel("Готов")
         self.status_bar.addWidget(self.status_info)
     
     def _update_status_info(self, hint: Optional[str] = None) -> None:
         if hint:
+            self.status_icon.hide()
+            self.status_info.setTextFormat(Qt.TextFormat.PlainText)
             self.status_info.setText(hint)
             return
+        error = self.converter_widget.get_input_error()
+        if error:
+            # Ошибка ввода: яркий значок ошибки и красная подсказка
+            self.status_icon.setPixmap(
+                self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical)
+                .pixmap(16, 16))
+            self.status_icon.show()
+            self.status_info.setTextFormat(Qt.TextFormat.RichText)
+            self.status_info.setText(
+                f'<span style="color: #cc0000; font-weight: bold;">{error}</span>')
+            return
+        self.status_icon.hide()
+        self.status_info.setTextFormat(Qt.TextFormat.PlainText)
         active = self.converter_widget.get_active_field()
         if active is not None:
             text = active.get_raw_value()

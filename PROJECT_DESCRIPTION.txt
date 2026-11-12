@@ -93,7 +93,7 @@ convmod/
 3.2. КОНВЕРТЕР
     NumberField (base_field.py)
         ↓ textChanged
-    _on_text_changed() → Validator.validate() → changed.emit()
+    _on_text_changed() → changed.emit() (ввод не откатывается)
         ↓
     ConverterWidget._on_field_changed()
         ↓
@@ -102,6 +102,10 @@ convmod/
     Converter.convert() → преобразование в другие форматы
         ↓
     NumberField.set_value_silent() → обновление полей (без сигналов)
+
+    Ошибка ввода (запрещённый символ/последовательность —
+    Validator.input_error()): остальные поля обнуляются, в статус-баре
+    появляется красный значок ошибки с подсказкой
 
     ByteGroupField (byte_field.py) наследует NumberField,
     добавляет ByteHighlighter для подсветки байтов.

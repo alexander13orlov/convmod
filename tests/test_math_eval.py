@@ -226,36 +226,5 @@ class TestCalculatorEnterField(unittest.TestCase):
         self.assertEqual(logs, [])
 
 
-class TestSignRunInputGui(unittest.TestCase):
-    """Ввод третьего знака подряд в поле откатывается."""
-
-    qapp: "QApplication"
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.qapp = QApplication.instance() or QApplication(sys.argv)
-
-    def _decimal_field(self):
-        from PyQt6.QtTest import QTest
-        from widgets.converter_widget import ConverterWidget
-        w = ConverterWidget()
-        w.show()
-        QTest.qWait(50)  # дождаться отложенной сборки полей
-        return w.fields["decimal"]
-
-    def test_third_sign_rolls_back(self) -> None:
-        dec = self._decimal_field()
-        dec.text_edit.setPlainText("10--")
-        self.assertEqual(dec.text_edit.toPlainText(), "10--")
-        dec.text_edit.setPlainText("10---")
-        self.assertEqual(dec.text_edit.toPlainText(), "10--")
-
-    def test_user_example_rolls_back(self) -> None:
-        dec = self._decimal_field()
-        dec.text_edit.setPlainText("10--")
-        dec.text_edit.setPlainText("10---+-++-+--1")
-        self.assertEqual(dec.text_edit.toPlainText(), "10--")
-
-
 if __name__ == "__main__":
     unittest.main()

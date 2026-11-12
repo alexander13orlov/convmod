@@ -17,7 +17,6 @@ class ByteGroupField(NumberField):
     def set_value_silent(self, text: str) -> None:
         """Установка значения без генерации сигнала changed"""
         self._ignore_signal = True
-        self._last_valid_text = text
         self.text_edit.setPlainText(text)
         QTimer.singleShot(1, self._init_highlighter)
         self._ignore_signal = False

@@ -19,7 +19,7 @@ from widgets.converter_widget import ConverterWidget
 
 
 class TestLayoutHintField(unittest.TestCase):
-    """Поле шлёт layout_hint только когда в ОТКЛОНЁННЫХ данных есть кириллица."""
+    """Поле шлёт layout_hint, когда в числовом поле есть кириллица."""
 
     # Ссылку держим на классе: без неё QApplication соберётся, и виджеты падут
     qapp: QApplication
@@ -33,11 +33,11 @@ class TestLayoutHintField(unittest.TestCase):
         field.layout_hint.connect(messages.append)
         return messages
 
-    def test_cyrillic_rejected_emits_hint(self) -> None:
+    def test_cyrillic_in_hex_stays_and_emits_hint(self) -> None:
         field = ByteGroupField("HEX прямой код:", "hex_direct", is_long=True)
         messages = self._collect(field)
-        field.text_edit.insertPlainText("Ф")  # кириллица не допускается в HEX
-        self.assertEqual(field.text_edit.toPlainText(), "")
+        field.text_edit.insertPlainText("Ф")  # не HEX-цифра, но остаётся в поле
+        self.assertEqual(field.text_edit.toPlainText(), "Ф")
         self.assertEqual(messages, [NumberField.LAYOUT_HINT])
 
     def test_non_cyrillic_invalid_no_hint(self) -> None:
@@ -54,12 +54,13 @@ class TestLayoutHintField(unittest.TestCase):
         self.assertEqual(messages, [])
 
     def test_second_latin_char_in_unicode_no_hint(self) -> None:
-        # Второй символ отклоняется (длина), но это не кириллица — подсказки нет
+        # Второй символ в символьном поле — запрещённая комбинация, но не
+        # кириллица (подсказка о раскладке — только для числовых полей)
         field = NumberField("UNICODE символ:", "unicode_char")
         messages = self._collect(field)
         field.text_edit.insertPlainText("Ф")
         field.text_edit.insertPlainText("a")
-        self.assertEqual(field.text_edit.toPlainText(), "Ф")
+        self.assertEqual(field.text_edit.toPlainText(), "Фa")
         self.assertEqual(messages, [])
 
 
@@ -82,7 +83,7 @@ class TestLayoutHintWidget(unittest.TestCase):
             field.text_edit.insertPlainText("Ф")
             self.assertIn(NumberField.LAYOUT_HINT, calls)
             calls.clear()
-            field.text_edit.insertPlainText("A")  # валидная правка
+            field.text_edit.setPlainText("A")  # валидная правка
             self.assertIn(None, calls)
         finally:
             QTest.qWait(20)  # досмотреть отложенные singleShot(1) живыми объектами

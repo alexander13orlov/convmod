@@ -11,6 +11,7 @@ from PyQt6.QtCore import Qt, QTimer, QEvent
 import math_eval
 from converters import Converter
 from config_manager import DEFAULT_VISIBLE_FIELDS
+from validators import Validator
 from widgets.base_field import NumberField
 from widgets.byte_field import ByteGroupField
 from widgets.highlighters import ByteHighlighter
@@ -37,6 +38,7 @@ class ConverterWidget(QWidget):
         self.parent_window: Optional[Any] = parent
         self.visible_fields: Dict[str, bool] = dict(DEFAULT_VISIBLE_FIELDS)
         self._hint: Optional[str] = None
+        self._input_error: Optional[str] = None
         self._hint_timer: QTimer = QTimer(self)
         self._hint_timer.setSingleShot(True)
         self._hint_timer.timeout.connect(self._clear_hint)
@@ -171,8 +173,9 @@ class ConverterWidget(QWidget):
         self._notify_status()
 
     def _on_valid_edit(self, text: str, source: NumberField) -> None:
-        # Произошла валидная правка — подсказка о раскладке больше не нужна
-        self._clear_hint()
+        # Текст чистый (без кириллицы) — подсказка о раскладке больше не нужна
+        if Validator.validate(text, source.format_type):
+            self._clear_hint()
 
     def _on_enter_pressed(self, source: NumberField) -> None:
         """Enter в поле с выражением: замена на результат + запись в лог."""
@@ -300,15 +303,14 @@ class ConverterWidget(QWidget):
         
         self._update_nb_display(text, source.format_type)
         
-        if self.status_callback:
-            self.status_callback()
-        
         if not text or text.strip() == "":
+            self._set_input_error(None)
             for ftype, widget in self.fields.items():
-                if widget is not None and widget != self.active_source:
+                if widget is not None and widget != source:
                     widget.set_value_silent("")
             self.updating = False
             self._update_source_highlight()
+            self._notify_status()
             return
         
         # Определяем правильный nb для источника
@@ -317,12 +319,19 @@ class ConverterWidget(QWidget):
         else:
             nb = 8
         
+        # Ошибка ввода: запрещённый символ или последовательность — текст
+        # сконвертировать нельзя, обнуляем остальные поля, статус-бар
+        # покажет красный значок с подсказкой. Неоконченное выражение
+        # (5+, 10--) ошибкой не считается: поля просто очищаются
+        error: Optional[str] = Validator.input_error(text, source.format_type)
+        self._set_input_error(error)
+        
         num_value = self.converter.parse(text, source.format_type, nb)
         logger.debug(f"[Converter] parse: source={source.format_type}, nb={nb}, num_value={num_value}")
         
         if num_value is not None:
             for ftype, widget in self.fields.items():
-                if widget is None or widget == self.active_source:
+                if widget is None or widget == source:
                     continue
                 nb_for_convert = self._get_nb_for_conversion(ftype)
                 converted = self.converter.convert(num_value, ftype, nb_for_convert)
@@ -330,17 +339,39 @@ class ConverterWidget(QWidget):
                     widget.set_value_silent(converted)
                 else:
                     widget.set_value_silent("")
+        elif error is not None:
+            self._zero_other_fields(source)
         else:
-            logger.debug(f"[Converter] num_value is None, clearing other fields")
+            logger.debug(f"[Converter] num_value is None (неоконченное), clearing other fields")
             for ftype, widget in self.fields.items():
-                if widget is not None and widget != self.active_source:
+                if widget is not None and widget != source:
                     widget.set_value_silent("")
         
         self.updating = False
         self._update_source_highlight()
+        self._notify_status()
   
   
     
+    def get_input_error(self) -> Optional[str]:
+        """Ошибка ввода в текущем источнике (или None)."""
+        return self._input_error
+
+    def _set_input_error(self, message: Optional[str]) -> None:
+        if self._input_error != message:
+            self._input_error = message
+
+    def _zero_other_fields(self, source: NumberField) -> None:
+        """Обнулить остальные поля: 0 для числовых форматов, пусто для символьных."""
+        for ftype, widget in self.fields.items():
+            if widget is None or widget == source:
+                continue
+            if ftype in NumberField.CHAR_FORMATS:
+                widget.set_value_silent("")
+                continue
+            zero: Optional[str] = self.converter.convert(0, ftype, self._get_nb_for_conversion(ftype))
+            widget.set_value_silent(zero if zero is not None else "")
+
     def _update_source_highlight(self) -> None:
         for widget in self.fields.values():
             if widget is not None:
@@ -358,6 +389,7 @@ class ConverterWidget(QWidget):
     
     def reset_fields(self) -> None:
         self._clear_hint()
+        self._input_error = None
         for widget in self.fields.values():
             if widget is not None:
                 widget.set_value_silent("")
