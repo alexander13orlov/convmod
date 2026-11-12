@@ -6,14 +6,17 @@ import re
 from typing import Dict, Optional
 
 class Validator:
+    # Числовые форматы: цифры формата + операторы калькулятора
+    # (+ - * / ^ ( ) и пробел). Ввод выражений идёт по ходу, поэтому
+    # промежуточные состояния не обязаны быть валидным числом.
     _patterns: Dict[str, str] = {
-        "decimal": r"^-?\d*([.,]\d*)?$",
-        "bin_direct": r"^-?[01]+$",
-        "bin_complement": r"^[01]+$",
-        "hex_direct": r"^-?[0-9A-Fa-f]+$",
-        "hex_complement": r"^[0-9A-Fa-f]+$",
-        "ieee_bin": r"^[01]+$",
-        "ieee_hex": r"^[0-9A-Fa-f]+$",
+        "decimal": r"^[0-9.,+\-*/^() ]*$",
+        "bin_direct": r"^[01+\-*/^() ]*$",
+        "bin_complement": r"^[01+\-*/^() ]*$",
+        "hex_direct": r"^[0-9A-Fa-f+\-*/^() ]*$",
+        "hex_complement": r"^[0-9A-Fa-f+\-*/^() ]*$",
+        "ieee_bin": r"^[01+\-*/^() ]*$",
+        "ieee_hex": r"^[0-9A-Fa-f+\-*/^() ]*$",
         "unicode_char": r"^.$",
         "utf8_char": r"^.$",
     }

@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, Callable
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
 from PyQt6.QtGui import QPalette, QColor, QFocusEvent
 from PyQt6.QtCore import Qt, QTimer, QEvent
+import math_eval
 from converters import Converter
 from config_manager import DEFAULT_VISIBLE_FIELDS
 from widgets.base_field import NumberField
@@ -22,7 +23,7 @@ class ConverterWidget(QWidget):
     # Сколько подсказка о раскладке показывается в статус-баре
     HINT_TIMEOUT_MS = 4000
 
-    def __init__(self, parent: Optional[QWidget] = None, status_callback: Optional[Callable[[], None]] = None, focus_callback: Optional[Callable[[Optional[str]], None]] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, status_callback: Optional[Callable[[], None]] = None, focus_callback: Optional[Callable[[Optional[str]], None]] = None, log_callback: Optional[Callable[[str, str, str], None]] = None) -> None:
         super().__init__(parent)
         self.fields: Dict[str, NumberField] = {}
         self.active_source: Optional[NumberField] = None
@@ -31,6 +32,7 @@ class ConverterWidget(QWidget):
         self.converter: Converter = Converter()
         self.status_callback = status_callback
         self.focus_callback = focus_callback
+        self.log_callback: Optional[Callable[[str, str, str], None]] = log_callback
         self.parent_window: Optional[Any] = parent
         self.visible_fields: Dict[str, bool] = dict(DEFAULT_VISIBLE_FIELDS)
         self._hint: Optional[str] = None
@@ -148,6 +150,15 @@ class ConverterWidget(QWidget):
                     if self.focus_callback:
                         self.focus_callback(self._hint)
                     break
+            return super().eventFilter(obj, event)
+        if (event.type() == QEvent.Type.KeyPress
+                and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)):
+            for ftype, field in self.fields.items():
+                if field is not None and field.text_edit is obj:
+                    if ftype in Converter._EXPR_FORMATS:
+                        self._on_enter_pressed(field)
+                        return True
+                    break
         return super().eventFilter(obj, event)
     
     def _on_selection_or_focus(self) -> None:
@@ -161,6 +172,25 @@ class ConverterWidget(QWidget):
     def _on_valid_edit(self, text: str, source: NumberField) -> None:
         # Произошла валидная правка — подсказка о раскладке больше не нужна
         self._clear_hint()
+
+    def _on_enter_pressed(self, source: NumberField) -> None:
+        """Enter в поле с выражением: замена на результат + запись в лог."""
+        text: str = source.get_raw_value()
+        fmt: str = source.format_type
+        if not text or not math_eval.is_expression(text):
+            return
+        nb: int = 4 if fmt in ('ieee_bin', 'ieee_hex') else 8
+        value = self.converter.parse(text, fmt, nb)
+        if value is None:
+            return
+        result_text: Optional[str] = self.converter.convert(
+            value, fmt, self._get_nb_for_conversion(fmt))
+        if result_text is None or result_text == text:
+            return
+        source.set_value_silent(result_text)
+        self._convert_from_source(result_text, source)
+        if self.log_callback is not None:
+            self.log_callback(text, result_text, fmt)
 
     def _clear_hint(self) -> None:
         if self._hint is None:

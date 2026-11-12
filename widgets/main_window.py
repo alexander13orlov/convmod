@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget()
         self.setCentralWidget(self.tab_widget)
         
-        self.converter_widget = ConverterWidget(self, self._update_status_info, self._update_status_info)
+        self.converter_widget = ConverterWidget(self, self._update_status_info, self._update_status_info, self._on_calculator_log)
         self.converter_widget.update_visible_fields(self.config.get("converter", {}).get("visible_fields", {}))
         
         self.settings_widget = SettingsWidget(self, self.converter_widget.visible_fields)
@@ -127,6 +127,10 @@ class MainWindow(QMainWindow):
         self.setMinimumHeight(total_height)
         self.resize(self.width(), total_height)
     
+    def _on_calculator_log(self, expression: str, result: str, fmt: str) -> None:
+        """Запись вычисления калькулятора (выражение и результат) в лог."""
+        self.log_widget.add_expression_entry(expression, result, fmt)
+
     def _apply_settings(self, new_visible: Dict[str, bool]) -> None:
         self.converter_widget.update_visible_fields(new_visible)
         self.config["converter"]["visible_fields"] = new_visible

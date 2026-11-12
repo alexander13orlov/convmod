@@ -75,6 +75,23 @@ class LogWidget(QWidget):
         except Exception as e:
             logger.error(f"Failed to write log: {e}")
     
+    def add_expression_entry(self, expression: str, result: str, fmt: str):
+        """Запись вычисления выражения (калькулятор в полях конвертера)."""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        entry = (f"[{timestamp}] Калькулятор | Поле: {fmt} | "
+                 f"Выражение: {expression} | Результат: {result}\n")
+
+        # Добавление в виджет
+        self.log_text.append(entry)
+        self._scroll_to_bottom()
+
+        # Запись в файл
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(entry)
+        except Exception as e:
+            logger.error(f"Failed to write log: {e}")
+
     def _clear_log(self):
         """Очистка лога"""
         reply = QMessageBox.question(self, "Очистка лога", 

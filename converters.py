@@ -7,6 +7,8 @@ import struct
 from decimal import Decimal
 from typing import Dict, Optional, Union
 
+import math_eval
+
 
 class Converter:
     # IEEE754: число байтов -> формат struct (старший байт первым)
@@ -21,8 +23,21 @@ class Converter:
             return int(value)
         return None
 
+    # Форматы, в которых поддерживаются арифметические выражения
+    _EXPR_FORMATS = math_eval.EXPR_FORMATS
+
     @staticmethod
     def parse(value_str: str, fmt: str, nb: int) -> Optional[Union[int, float]]:
+        value: Optional[Union[int, float]] = Converter._parse_number(value_str, fmt, nb)
+        # Фолбэк — только на настоящее выражение (с оператором), а не на
+        # одиночное число: иначе обходятся проверки непредставимости
+        if (value is None and fmt in Converter._EXPR_FORMATS
+                and math_eval.is_expression(value_str)):
+            value = math_eval.evaluate(value_str, fmt)
+        return value
+
+    @staticmethod
+    def _parse_number(value_str: str, fmt: str, nb: int) -> Optional[Union[int, float]]:
         try:
             value_str = value_str.replace(',', '.')
             if fmt == 'decimal':

@@ -2,5 +2,5 @@
 # ConvMod: версия программы и номер билда
 
 APP_NAME = "ConvMod"
-APP_VERSION = "1.3.0"
-APP_BUILD = 6
+APP_VERSION = "1.4.0"
+APP_BUILD = 7
