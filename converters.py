@@ -2,7 +2,9 @@
 # project_root/converters.py
 # Python 3.11+, PyQt6
 
+import math
 import struct
+from decimal import Decimal
 from typing import Dict, Optional, Union
 
 
@@ -24,11 +26,22 @@ class Converter:
         try:
             value_str = value_str.replace(',', '.')
             if fmt == 'decimal':
-                # Целые — через int (точно для любой длины); дробные — float
+                # Целые — через int (точно для любой длины)
                 try:
                     return int(value_str)
                 except ValueError:
-                    return float(value_str)
+                    num = float(value_str)
+                if not math.isfinite(num):
+                    return None  # переполнение float64 (например, 1e400)
+                if num.is_integer():
+                    # float64 округлил до целого: точно (Decimal) проверяем,
+                    # что в строке не было дробной части. Если была — значение
+                    # не представимо (дробь потеряна, |x| >= 2**52), не выдаём
+                    # целое, чтобы конвертер не строил HEX/bin от него.
+                    if Decimal(value_str) == Decimal(value_str).to_integral_value():
+                        return int(num)
+                    return None
+                return num
             elif fmt == 'bin_direct':
                 if not value_str:
                     return None
