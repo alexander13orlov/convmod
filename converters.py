@@ -24,11 +24,11 @@ class Converter:
         try:
             value_str = value_str.replace(',', '.')
             if fmt == 'decimal':
-                # Парсим как float всегда, потом преобразуем если целое
-                num = float(value_str)
-                if num.is_integer():
-                    return int(num)
-                return num
+                # Целые — через int (точно для любой длины); дробные — float
+                try:
+                    return int(value_str)
+                except ValueError:
+                    return float(value_str)
             elif fmt == 'bin_direct':
                 if not value_str:
                     return None
