@@ -100,6 +100,50 @@ class TestMathEvalCore(unittest.TestCase):
         self.assertTrue(math_eval.is_expression("(2)"))
         self.assertFalse(math_eval.is_expression(" "))
 
+    def test_three_consecutive_signs_rejected(self) -> None:
+        # Не более двух знаков +/− подряд без числа
+        self.assertIsNone(math_eval.evaluate("10---1", "decimal"))
+        self.assertIsNone(math_eval.evaluate("---1", "decimal"))
+        self.assertIsNone(math_eval.evaluate("10---+-++-+--1", "decimal"))
+        self.assertIsNone(math_eval.evaluate("10 - - - 1", "decimal"))
+        self.assertIsNone(math_eval.evaluate("10*---1", "decimal"))
+
+    def test_two_consecutive_signs_ok(self) -> None:
+        # Первый знак — действие, второй — знак числа
+        self.assertEqual(math_eval.evaluate("10--1", "decimal"), 11)
+        self.assertEqual(math_eval.evaluate("10-+1", "decimal"), 9)
+        self.assertEqual(math_eval.evaluate("10 - - 1", "decimal"), 11)
+        self.assertEqual(math_eval.evaluate("10*--2", "decimal"), 20)
+
+    def test_hex_sign_run(self) -> None:
+        self.assertIsNone(math_eval.evaluate("FF---1", "hex_direct"))
+        self.assertEqual(math_eval.evaluate("FF--1", "hex_direct"), 256)
+
+
+class TestSignRunValidator(unittest.TestCase):
+    """Валидатор ввода: не более двух знаков +/− подряд без числа."""
+
+    def test_three_signs_rejected(self) -> None:
+        from validators import Validator
+        self.assertFalse(Validator.validate("10---1", "decimal"))
+        self.assertFalse(Validator.validate("10 - - - 1", "decimal"))
+        self.assertFalse(Validator.validate("10---+-++-+--1", "decimal"))
+        self.assertFalse(Validator.validate("FF---1", "hex_direct"))
+
+    def test_two_signs_accepted(self) -> None:
+        from validators import Validator
+        self.assertTrue(Validator.validate("10--1", "decimal"))
+        self.assertTrue(Validator.validate("10-+1", "decimal"))
+        self.assertTrue(Validator.validate("10 - - 1", "decimal"))
+        self.assertTrue(Validator.validate("10*--1", "decimal"))
+
+    def test_plain_numbers_unchanged(self) -> None:
+        from validators import Validator
+        self.assertTrue(Validator.validate("10-1", "decimal"))
+        self.assertTrue(Validator.validate("-10", "decimal"))
+        self.assertTrue(Validator.validate("FF", "hex_direct"))
+        self.assertTrue(Validator.validate("1010", "bin_direct"))
+
 
 class TestMathEvalParseIntegration(unittest.TestCase):
     """Converter.parse: выражения считаются, обычные числа — как раньше."""
@@ -180,6 +224,37 @@ class TestCalculatorEnterField(unittest.TestCase):
         QTest.keyClick(dec.text_edit, Qt.Key.Key_Return)
         self.assertEqual(dec.text_edit.toPlainText(), "42")
         self.assertEqual(logs, [])
+
+
+class TestSignRunInputGui(unittest.TestCase):
+    """Ввод третьего знака подряд в поле откатывается."""
+
+    qapp: "QApplication"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.qapp = QApplication.instance() or QApplication(sys.argv)
+
+    def _decimal_field(self):
+        from PyQt6.QtTest import QTest
+        from widgets.converter_widget import ConverterWidget
+        w = ConverterWidget()
+        w.show()
+        QTest.qWait(50)  # дождаться отложенной сборки полей
+        return w.fields["decimal"]
+
+    def test_third_sign_rolls_back(self) -> None:
+        dec = self._decimal_field()
+        dec.text_edit.setPlainText("10--")
+        self.assertEqual(dec.text_edit.toPlainText(), "10--")
+        dec.text_edit.setPlainText("10---")
+        self.assertEqual(dec.text_edit.toPlainText(), "10--")
+
+    def test_user_example_rolls_back(self) -> None:
+        dec = self._decimal_field()
+        dec.text_edit.setPlainText("10--")
+        dec.text_edit.setPlainText("10---+-++-+--1")
+        self.assertEqual(dec.text_edit.toPlainText(), "10--")
 
 
 if __name__ == "__main__":

@@ -28,4 +28,9 @@ class Validator:
         pattern: Optional[str] = cls._patterns.get(fmt)
         if pattern is None:
             return False
-        return re.fullmatch(pattern, text) is not None
+        if re.fullmatch(pattern, text) is None:
+            return False
+        # Не более двух знаков +/− подряд без числа: первый знак — действие,
+        # второй — знак числа (пробелы между знаками не учитываются)
+        compact: str = re.sub(r"\s+", "", text)
+        return re.search(r"[+-]{3}", compact) is None

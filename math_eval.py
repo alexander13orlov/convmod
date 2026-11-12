@@ -53,6 +53,7 @@ def _tokenize(text: str, fmt: str) -> Optional[List[Tuple[str, str]]]:
     tokens: List[Tuple[str, str]] = []
     i: int = 0
     n: int = len(text)
+    sign_run: int = 0
     while i < n:
         ch: str = text[i]
         if ch.isspace():
@@ -61,9 +62,18 @@ def _tokenize(text: str, fmt: str) -> Optional[List[Tuple[str, str]]]:
         m: Optional["re.Match[str]"] = pattern.match(text, i)
         if m is not None:
             tokens.append(('num', m.group(0)))
+            sign_run = 0
             i = m.end()
             continue
         if ch in '+-*/^()':
+            # Не более двух знаков +/− подряд без числа: первый знак —
+            # действие, второй — знак числа; другие операторы обрывают цепочку
+            if ch in '+-':
+                sign_run += 1
+                if sign_run > 2:
+                    return None
+            else:
+                sign_run = 0
             tokens.append((ch, ch))
             i += 1
             continue
